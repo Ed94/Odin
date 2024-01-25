@@ -2,7 +2,7 @@ package raylib
 
 import c "core:c/libc"
 
-RAYGUI_SHARED :: #config(RAYGUI_SHARED, false)
+RAYGUI_SHARED :: #config(RAYGUI_SHARED, true)
 
 when ODIN_OS == .Windows {
 	when RAYGUI_SHARED {
