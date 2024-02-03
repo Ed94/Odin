@@ -1,6 +1,6 @@
 package runtime
 
-import "core:intrinsics"
+import "base:intrinsics"
 
 @(private="file")
 IS_WASM :: ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32
@@ -11,7 +11,7 @@ RUNTIME_LINKAGE :: "strong" when (
 	ODIN_BUILD_MODE == .Dynamic ||
 	!ODIN_NO_CRT) &&
 	!IS_WASM) else "internal"
-RUNTIME_REQUIRE :: !ODIN_TILDE
+RUNTIME_REQUIRE :: false // !ODIN_TILDE
 
 @(private)
 __float16 :: f16 when __ODIN_LLVM_F16_SUPPORTED else u16
@@ -22,7 +22,7 @@ byte_slice :: #force_inline proc "contextless" (data: rawptr, len: int) -> []byt
 	return ([^]byte)(data)[:max(len, 0)]
 }
 
-is_power_of_two_int :: #force_inline proc(x: int) -> bool {
+is_power_of_two_int :: #force_inline proc "contextless" (x: int) -> bool {
 	if x <= 0 {
 		return false
 	}
@@ -40,7 +40,7 @@ align_forward_int :: #force_inline proc(ptr, align: int) -> int {
 	return p
 }
 
-is_power_of_two_uintptr :: #force_inline proc(x: uintptr) -> bool {
+is_power_of_two_uintptr :: #force_inline proc "contextless" (x: uintptr) -> bool {
 	if x <= 0 {
 		return false
 	}
