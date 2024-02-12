@@ -322,7 +322,7 @@ Font :: struct {
 	charsPadding: c.int,          // Padding around the chars
 	texture:      Texture2D,      // Characters texture atlas
 	recs:         [^]Rectangle,   // Characters rectangles in texture
-	chars:        [^]GlyphInfo,    // Characters info data
+	glyphs:        [^]GlyphInfo,    // Characters info data
 }
 
 // Camera type, defines a camera position/orientation in 3d space
