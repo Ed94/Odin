@@ -237,7 +237,7 @@ last_write_time_by_name :: proc(name: string) -> (File_Time, Errno) {
 }
 
 
-get_page_size :: proc() -> int {
+get_page_size :: proc "contextless" () -> int {
 	unimplemented("core:os procedure not supported on JS target")
 }
 

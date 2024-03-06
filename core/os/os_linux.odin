@@ -1005,7 +1005,7 @@ dlerror :: proc() -> string {
 	return string(_unix_dlerror())
 }
 
-get_page_size :: proc() -> int {
+get_page_size :: proc "contextless" () -> int {
 	// NOTE(tetra): The page size never changes, so why do anything complicated
 	// if we don't have to.
 	@static page_size := -1
