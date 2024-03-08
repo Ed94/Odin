@@ -95,7 +95,7 @@ MAX_TEXT_BUFFER_LENGTH :: #config(RAYLIB_MAX_TEXT_BUFFER_LENGTH, 1024)
 
 #assert(size_of(rune) == size_of(c.int))
 
-RAYLIB_SHARED :: #config(RAYLIB_SHARED, false)
+RAYLIB_SHARED :: #config(RAYLIB_SHARED, true)
 
 when ODIN_OS == .Windows {
 	when RAYLIB_SHARED {
