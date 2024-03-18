@@ -221,6 +221,12 @@ gb_internal bool check_has_break(Ast *stmt, String const &label, bool implicit) 
 			return true;
 		}
 		break;
+
+	case Ast_ExprStmt:
+		if (stmt->ExprStmt.expr->viral_state_flags & ViralStateFlag_ContainsOrBreak) {
+			return true;
+		}
+		break;
 	}
 
 	return false;
@@ -1537,8 +1543,16 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 				goto skip_expr_range_stmt;
 			}
 		} else if (operand.mode != Addressing_Invalid) {
+			if (operand.mode == Addressing_OptionalOk || operand.mode == Addressing_OptionalOkPtr) {
+				Type *end_type = nullptr;
+				check_promote_optional_ok(ctx, &operand, nullptr, &end_type, false);
+				if (is_type_boolean(end_type)) {
+					check_promote_optional_ok(ctx, &operand, nullptr, &end_type, true);
+				}
+			}
 			bool is_ptr = is_type_pointer(operand.type);
 			Type *t = base_type(type_deref(operand.type));
+
 			switch (t->kind) {
 			case Type_Basic:
 				if (t->Basic.kind == Basic_string || t->Basic.kind == Basic_UntypedString) {

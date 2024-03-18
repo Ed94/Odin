@@ -108,7 +108,7 @@ gb_internal Type *make_soa_struct_dynamic_array(CheckerContext *ctx, Ast *array_
 
 gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, Ast *call, i32 id, Type *type_hint);
 
-gb_internal void check_promote_optional_ok(CheckerContext *c, Operand *x, Type **val_type_, Type **ok_type_);
+gb_internal void check_promote_optional_ok(CheckerContext *c, Operand *x, Type **val_type_, Type **ok_type_, bool change_operand=true);
 
 gb_internal void check_or_else_right_type(CheckerContext *c, Ast *expr, String const &name, Type *right_type);
 gb_internal void check_or_else_split_types(CheckerContext *c, Operand *x, String const &name, Type **left_type_, Type **right_type_);
@@ -1539,7 +1539,25 @@ gb_internal Entity *check_ident(CheckerContext *c, Operand *o, Ast *n, Type *nam
 		if (is_blank_ident(name)) {
 			error(n, "'_' cannot be used as a value");
 		} else {
+			ERROR_BLOCK();
 			error(n, "Undeclared name: %.*s", LIT(name));
+
+			// NOTE(bill): Loads of checks for C programmers
+			if (name == "float") {
+				error_line("\tSuggestion: Did you mean 'f32'?\n");
+			} else if (name == "double") {
+				error_line("\tSuggestion: Did you mean 'f64'?\n");
+			} else if (name == "short") {
+				error_line("\tSuggestion: Did you mean 'i16' or 'c.short' (which is part of 'core:c')?\n");
+			} else if (name == "long") {
+				error_line("\tSuggestion: Did you mean 'c.long' (which is part of 'core:c')?\n");
+			} else if (name == "unsigned") {
+				error_line("\tSuggestion: Did you mean 'c.uint' (which is part of 'core:c')?\n");
+			} else if (name == "char") {
+				error_line("\tSuggestion: Did you mean 'u8', 'i8' or 'c.char' (which is part of 'core:c')?\n");
+			} else if (name == "while") {
+				error_line("\tSuggestion: Did you mean 'for'? Odin only has one loop construct: 'for'\n");
+			}
 		}
 		o->type = t_invalid;
 		o->mode = Addressing_Invalid;
@@ -6796,7 +6814,7 @@ gb_internal CallArgumentError check_polymorphic_record_type(CheckerContext *c, O
 					isize index = lookup_polymorphic_record_parameter(original_type, name);
 					if (index >= 0) {
 						TypeTuple *params = get_record_polymorphic_params(original_type);
-						Entity *e = params->variables[i];
+						Entity *e = params->variables[index];
 						if (e->kind == Entity_Constant) {
 							check_expr_with_type_hint(c, &operands[i], fv->value, e->type);
 							continue;
@@ -6847,7 +6865,7 @@ gb_internal CallArgumentError check_polymorphic_record_type(CheckerContext *c, O
 
 	Array<Operand> ordered_operands = operands;
 	if (!named_fields) {
-		ordered_operands = array_make<Operand>(permanent_allocator(), param_count);
+		ordered_operands = array_make<Operand>(permanent_allocator(), operands.count);
 		array_copy(&ordered_operands, operands, 0);
 	} else {
 		TEMPORARY_ALLOCATOR_GUARD();
@@ -7801,7 +7819,7 @@ gb_internal ExprKind check_implicit_selector_expr(CheckerContext *c, Operand *o,
 }
 
 
-gb_internal void check_promote_optional_ok(CheckerContext *c, Operand *x, Type **val_type_, Type **ok_type_) {
+gb_internal void check_promote_optional_ok(CheckerContext *c, Operand *x, Type **val_type_, Type **ok_type_, bool change_operand) {
 	switch (x->mode) {
 	case Addressing_MapIndex:
 	case Addressing_OptionalOk:
@@ -7819,22 +7837,28 @@ gb_internal void check_promote_optional_ok(CheckerContext *c, Operand *x, Type *
 		Type *pt = base_type(type_of_expr(expr->CallExpr.proc));
 		if (is_type_proc(pt)) {
 			Type *tuple = pt->Proc.results;
-			add_type_and_value(c, x->expr, x->mode, tuple, x->value);
 
 			if (pt->Proc.result_count >= 2) {
 				if (ok_type_) *ok_type_ = tuple->Tuple.variables[1]->type;
 			}
-			expr->CallExpr.optional_ok_one = false;
-			x->type = tuple;
+			if (change_operand) {
+				expr->CallExpr.optional_ok_one = false;
+				x->type = tuple;
+				add_type_and_value(c, x->expr, x->mode, tuple, x->value);
+			}
 			return;
 		}
 	}
 
 	Type *tuple = make_optional_ok_type(x->type);
+
 	if (ok_type_) *ok_type_ = tuple->Tuple.variables[1]->type;
-	add_type_and_value(c, x->expr, x->mode, tuple, x->value);
-	x->type = tuple;
-	GB_ASSERT(is_type_tuple(type_of_expr(x->expr)));
+
+	if (change_operand) {
+		add_type_and_value(c, x->expr, x->mode, tuple, x->value);
+		x->type = tuple;
+		GB_ASSERT(is_type_tuple(type_of_expr(x->expr)));
+	}
 }
 
 
@@ -8405,6 +8429,7 @@ gb_internal ExprKind check_or_branch_expr(CheckerContext *c, Operand *o, Ast *no
 
 	switch (be->token.kind) {
 	case Token_or_break:
+		node->viral_state_flags |= ViralStateFlag_ContainsOrBreak;
 		if ((c->stmt_flags & Stmt_BreakAllowed) == 0 && label == nullptr) {
 			error(be->token, "'%.*s' only allowed in non-inline loops or 'switch' statements", LIT(name));
 		}
@@ -8478,18 +8503,26 @@ gb_internal void check_compound_literal_field_values(CheckerContext *c, Slice<As
 			continue;
 		}
 		ast_node(fv, FieldValue, elem);
-		if (fv->field->kind != Ast_Ident) {
-			gbString expr_str = expr_to_string(fv->field);
+		Ast *ident = fv->field;
+		if (ident->kind == Ast_ImplicitSelectorExpr) {
+			gbString expr_str = expr_to_string(ident);
+			error(ident, "Field names do not start with a '.', remove the '.' in structure literal", expr_str);
+			gb_string_free(expr_str);
+
+			ident = ident->ImplicitSelectorExpr.selector;
+		}
+		if (ident->kind != Ast_Ident) {
+			gbString expr_str = expr_to_string(ident);
 			error(elem, "Invalid field name '%s' in structure literal", expr_str);
 			gb_string_free(expr_str);
 			continue;
 		}
-		String name = fv->field->Ident.token.string;
+		String name = ident->Ident.token.string;
 
 		Selection sel = lookup_field(type, name, o->mode == Addressing_Type);
 		bool is_unknown = sel.entity == nullptr;
 		if (is_unknown) {
-			error(fv->field, "Unknown field '%.*s' in structure literal", LIT(name));
+			error(ident, "Unknown field '%.*s' in structure literal", LIT(name));
 			continue;
 		}
 
@@ -8503,24 +8536,24 @@ gb_internal void check_compound_literal_field_values(CheckerContext *c, Slice<As
 		}
 
 
-		add_entity_use(c, fv->field, field);
+		add_entity_use(c, ident, field);
 		if (string_set_update(&fields_visited, name)) {
 			if (sel.index.count > 1) {
 				if (String *found = string_map_get(&fields_visited_through_raw_union, sel.entity->token.string)) {
-					error(fv->field, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
+					error(ident, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
 				} else {
-					error(fv->field, "Duplicate or reused field '%.*s' in %.*s", LIT(sel.entity->token.string), LIT(assignment_str));
+					error(ident, "Duplicate or reused field '%.*s' in %.*s", LIT(sel.entity->token.string), LIT(assignment_str));
 				}
 			} else {
-				error(fv->field, "Duplicate field '%.*s' in %.*s", LIT(field->token.string), LIT(assignment_str));
+				error(ident, "Duplicate field '%.*s' in %.*s", LIT(field->token.string), LIT(assignment_str));
 			}
 			continue;
 		} else if (String *found = string_map_get(&fields_visited_through_raw_union, sel.entity->token.string)) {
-			error(fv->field, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
+			error(ident, "Field '%.*s' is already initialized due to a previously assigned struct #raw_union field '%.*s'", LIT(sel.entity->token.string), LIT(*found));
 			continue;
 		}
 		if (sel.indirect) {
-			error(fv->field, "Cannot assign to the %d-nested anonymous indirect field '%.*s' in a %.*s", cast(int)sel.index.count-1, LIT(name), LIT(assignment_str));
+			error(ident, "Cannot assign to the %d-nested anonymous indirect field '%.*s' in a %.*s", cast(int)sel.index.count-1, LIT(name), LIT(assignment_str));
 			continue;
 		}
 
@@ -10254,6 +10287,7 @@ gb_internal ExprKind check_expr_base_internal(CheckerContext *c, Operand *o, Ast
 	case_end;
 
 	case_ast_node(re, OrReturnExpr, node);
+		node->viral_state_flags |= ViralStateFlag_ContainsOrReturn;
 		return check_or_return_expr(c, o, node, type_hint);
 	case_end;
 
