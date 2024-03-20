@@ -876,7 +876,7 @@ namespace lbAbiAmd64SysV {
 		if (types.count == 1) {
 			return types[0];
 		}
-		return LLVMStructTypeInContext(c, types.data, cast(unsigned)types.count, false);
+		return LLVMStructTypeInContext(c, types.data, cast(unsigned)types.count, true);
 	}
 
 	gb_internal void classify_with(LLVMTypeRef t, Array<RegClass> *cls, i64 ix, i64 off) {
@@ -1183,17 +1183,25 @@ namespace lbAbiArm64 {
 				i64 size = lb_sizeof(type);
 				if (size <= 16) {
 					LLVMTypeRef cast_type = nullptr;
-					if (size <= 1) {
-						cast_type = LLVMIntTypeInContext(c, 8);
-					} else if (size <= 2) {
-						cast_type = LLVMIntTypeInContext(c, 16);
-					} else if (size <= 4) {
-						cast_type = LLVMIntTypeInContext(c, 32);
-					} else if (size <= 8) {
-						cast_type = LLVMIntTypeInContext(c, 64);
+					if (size <= 8) {
+						cast_type = LLVMIntTypeInContext(c, cast(unsigned)(size*8));
 					} else {
 						unsigned count = cast(unsigned)((size+7)/8);
-						cast_type = llvm_array_type(LLVMIntTypeInContext(c, 64), count);
+
+						LLVMTypeRef llvm_i64 = LLVMIntTypeInContext(c, 64);
+						LLVMTypeRef *types = gb_alloc_array(temporary_allocator(), LLVMTypeRef, count);
+
+						i64 size_copy = size;
+						for (unsigned i = 0; i < count; i++) {
+							if (size_copy >= 8) {
+								types[i] = llvm_i64;
+							} else {
+								types[i] = LLVMIntTypeInContext(c, 8*cast(unsigned)size_copy);
+							}
+							size_copy -= 8;
+						}
+						GB_ASSERT(size_copy <= 0);
+						cast_type = LLVMStructTypeInContext(c, types, count, true);
 					}
 					args[i] = lb_arg_type_direct(type, cast_type, nullptr, nullptr);
 				} else {
@@ -1318,7 +1326,7 @@ namespace lbAbiWasm {
 				// ignore padding
 				LLVMStructGetTypeAtIndex(type, 2)
 			};
-			LLVMTypeRef new_type = LLVMStructTypeInContext(c, types, gb_count_of(types), false);
+			LLVMTypeRef new_type = LLVMStructTypeInContext(c, types, gb_count_of(types), true);
 			return lb_arg_type_direct(type, new_type, nullptr, nullptr);
 		} else {
 			return is_struct(c, type, calling_convention);
