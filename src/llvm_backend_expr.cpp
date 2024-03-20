@@ -684,12 +684,6 @@ gb_internal lbValue lb_emit_matrix_flatten(lbProcedure *p, lbValue m, Type *type
 	Type *mt = base_type(m.type);
 	GB_ASSERT(mt->kind == Type_Matrix);
 
-	// TODO(bill): Determine why this fails on Windows sometimes
-	if (false && lb_is_matrix_simdable(mt)) {
-		LLVMValueRef vector = lb_matrix_to_trimmed_vector(p, m);
-		return lb_matrix_cast_vector_to_type(p, vector, type);
-	}
-
 	lbAddr res = lb_add_local_generated(p, type, true);
 
 	i64 row_count = mt->Matrix.row_count;
@@ -763,6 +757,7 @@ gb_internal lbValue lb_emit_matrix_mul(lbProcedure *p, lbValue lhs, lbValue rhs,
 	GB_ASSERT(is_type_matrix(yt));
 	GB_ASSERT(xt->Matrix.column_count == yt->Matrix.row_count);
 	GB_ASSERT(are_types_identical(xt->Matrix.elem, yt->Matrix.elem));
+	GB_ASSERT(xt->Matrix.is_row_major == yt->Matrix.is_row_major);
 
 	Type *elem = xt->Matrix.elem;
 
@@ -770,7 +765,7 @@ gb_internal lbValue lb_emit_matrix_mul(lbProcedure *p, lbValue lhs, lbValue rhs,
 	unsigned inner         = cast(unsigned)xt->Matrix.column_count;
 	unsigned outer_columns = cast(unsigned)yt->Matrix.column_count;
 
-	if (lb_is_matrix_simdable(xt)) {
+	if (!xt->Matrix.is_row_major && lb_is_matrix_simdable(xt)) {
 		unsigned x_stride = cast(unsigned)matrix_type_stride_in_elems(xt);
 		unsigned y_stride = cast(unsigned)matrix_type_stride_in_elems(yt);
 
@@ -812,13 +807,37 @@ gb_internal lbValue lb_emit_matrix_mul(lbProcedure *p, lbValue lhs, lbValue rhs,
 		return lb_addr_load(p, res);
 	}
 
-	{
+	if (!xt->Matrix.is_row_major) {
 		lbAddr res = lb_add_local_generated(p, type, true);
 
 		auto inners = slice_make<lbValue[2]>(permanent_allocator(), inner);
 
 		for (unsigned j = 0; j < outer_columns; j++) {
 			for (unsigned i = 0; i < outer_rows; i++) {
+				lbValue dst = lb_emit_matrix_epi(p, res.addr, i, j);
+				for (unsigned k = 0; k < inner; k++) {
+					inners[k][0] = lb_emit_matrix_ev(p, lhs, i, k);
+					inners[k][1] = lb_emit_matrix_ev(p, rhs, k, j);
+				}
+
+				lbValue sum = lb_const_nil(p->module, elem);
+				for (unsigned k = 0; k < inner; k++) {
+					lbValue a = inners[k][0];
+					lbValue b = inners[k][1];
+					sum = lb_emit_mul_add(p, a, b, sum, elem);
+				}
+				lb_emit_store(p, dst, sum);
+			}
+		}
+
+		return lb_addr_load(p, res);
+	} else {
+		lbAddr res = lb_add_local_generated(p, type, true);
+
+		auto inners = slice_make<lbValue[2]>(permanent_allocator(), inner);
+
+		for (unsigned i = 0; i < outer_rows; i++) {
+			for (unsigned j = 0; j < outer_columns; j++) {
 				lbValue dst = lb_emit_matrix_epi(p, res.addr, i, j);
 				for (unsigned k = 0; k < inner; k++) {
 					inners[k][0] = lb_emit_matrix_ev(p, lhs, i, k);
@@ -855,7 +874,7 @@ gb_internal lbValue lb_emit_matrix_mul_vector(lbProcedure *p, lbValue lhs, lbVal
 
 	Type *elem = mt->Matrix.elem;
 
-	if (lb_is_matrix_simdable(mt)) {
+	if (!mt->Matrix.is_row_major && lb_is_matrix_simdable(mt)) {
 		unsigned stride = cast(unsigned)matrix_type_stride_in_elems(mt);
 
 		unsigned row_count = cast(unsigned)mt->Matrix.row_count;
@@ -924,7 +943,7 @@ gb_internal lbValue lb_emit_vector_mul_matrix(lbProcedure *p, lbValue lhs, lbVal
 
 	Type *elem = mt->Matrix.elem;
 
-	if (lb_is_matrix_simdable(mt)) {
+	if (!mt->Matrix.is_row_major && lb_is_matrix_simdable(mt)) {
 		unsigned stride = cast(unsigned)matrix_type_stride_in_elems(mt);
 
 		unsigned row_count = cast(unsigned)mt->Matrix.row_count;
@@ -3971,12 +3990,21 @@ gb_internal lbAddr lb_build_addr_index_expr(lbProcedure *p, Ast *expr) {
 		}
 		lbValue index = lb_build_expr(p, ie->index);
 		index = lb_emit_conv(p, index, t_int);
-		lbValue elem = lb_emit_matrix_ep(p, matrix, lb_const_int(p->module, t_int, 0), index);
+
+		isize bounds_len = 0;
+		lbValue elem = {};
+		if (t->Matrix.is_row_major) {
+			bounds_len = t->Matrix.row_count;
+			elem = lb_emit_matrix_ep(p, matrix, index, lb_const_int(p->module, t_int, 0));
+		} else {
+			bounds_len = t->Matrix.column_count;
+			elem = lb_emit_matrix_ep(p, matrix, lb_const_int(p->module, t_int, 0), index);
+		}
 		elem = lb_emit_conv(p, elem, alloc_type_pointer(type_of_expr(expr)));
 
 		auto index_tv = type_and_value_of_expr(ie->index);
 		if (index_tv.mode != Addressing_Constant) {
-			lbValue len = lb_const_int(p->module, t_int, t->Matrix.column_count);
+			lbValue len = lb_const_int(p->module, t_int, bounds_len);
 			lb_emit_bounds_check(p, ast_token(ie->index), index, len);
 		}
 		return lb_addr(elem);
