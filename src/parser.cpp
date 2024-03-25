@@ -2351,9 +2351,6 @@ gb_internal Ast *parse_operand(AstFile *f, bool lhs) {
 				return ast_bad_expr(f, token, name);
 			}
 			switch (expr->kind) {
-			case Ast_ArrayType:
-				syntax_error(expr, "#partial has been replaced with #sparse for non-contiguous enumerated array types");
-				break;
 			case Ast_CompoundLit:
 				expr->CompoundLit.tag = tag;
 				break;
@@ -2540,6 +2537,9 @@ gb_internal Ast *parse_operand(AstFile *f, bool lhs) {
 		Ast *elem = parse_type(f);
 		return ast_pointer_type(f, token, elem);
 	} break;
+
+	case Token_Mul:
+		return parse_unary_expr(f, true);
 
 	case Token_OpenBracket: {
 		Token token = expect_token(f, Token_OpenBracket);
@@ -3274,7 +3274,9 @@ gb_internal Ast *parse_unary_expr(AstFile *f, bool lhs) {
 	case Token_Sub:
 	case Token_Xor:
 	case Token_And:
-	case Token_Not: {
+	case Token_Not:
+	case Token_Mul: // Used for error handling when people do C-like things
+	{
 		Token token = advance_token(f);
 		Ast *expr = parse_unary_expr(f, lhs);
 		return ast_unary_expr(f, token, expr);
@@ -3661,6 +3663,7 @@ gb_internal Ast *parse_simple_stmt(AstFile *f, u32 flags) {
 		expect_token_after(f, Token_Colon, "identifier list");
 		if ((flags&StmtAllowFlag_Label) && lhs.count == 1) {
 			bool is_partial = false;
+			bool is_reverse = false;
 			Token partial_token = {};
 			if (f->curr_token.kind == Token_Hash) {
 				// NOTE(bill): This is purely for error messages
@@ -3670,6 +3673,11 @@ gb_internal Ast *parse_simple_stmt(AstFile *f, u32 flags) {
 					partial_token = expect_token(f, Token_Hash);
 					expect_token(f, Token_Ident);
 					is_partial = true;
+				} else if (name.kind == Token_Ident && name.string == "reverse" &&
+				    peek_token_n(f, 1).kind == Token_for) {
+					partial_token = expect_token(f, Token_Hash);
+					expect_token(f, Token_Ident);
+					is_reverse = true;
 				}
 			}
 			switch (f->curr_token.kind) {
@@ -3704,6 +3712,18 @@ gb_internal Ast *parse_simple_stmt(AstFile *f, u32 flags) {
 						break;
 					}
 					syntax_error(partial_token, "Incorrect use of directive, use '#partial %.*s: switch'", LIT(ast_token(name).string));
+				} else if (is_reverse) {
+					switch (stmt->kind) {
+					case Ast_RangeStmt:
+						if (stmt->RangeStmt.reverse) {
+							syntax_error(token, "#reverse already applied to a 'for in' statement");
+						}
+						stmt->RangeStmt.reverse = true;
+						break;
+					default:
+						syntax_error(token, "#reverse can only be applied to a 'for in' statement");
+						break;
+					}
 				}
 
 				return stmt;
@@ -3898,14 +3918,15 @@ struct ParseFieldPrefixMapping {
 	FieldFlag       flag;
 };
 
-gb_global ParseFieldPrefixMapping parse_field_prefix_mappings[] = {
-	{str_lit("using"),      Token_using,     FieldFlag_using},
-	{str_lit("no_alias"),   Token_Hash,      FieldFlag_no_alias},
-	{str_lit("c_vararg"),   Token_Hash,      FieldFlag_c_vararg},
-	{str_lit("const"),      Token_Hash,      FieldFlag_const},
-	{str_lit("any_int"),    Token_Hash,      FieldFlag_any_int},
-	{str_lit("subtype"),    Token_Hash,      FieldFlag_subtype},
-	{str_lit("by_ptr"),     Token_Hash,      FieldFlag_by_ptr},
+gb_global ParseFieldPrefixMapping const parse_field_prefix_mappings[] = {
+	{str_lit("using"),        Token_using,     FieldFlag_using},
+	{str_lit("no_alias"),     Token_Hash,      FieldFlag_no_alias},
+	{str_lit("c_vararg"),     Token_Hash,      FieldFlag_c_vararg},
+	{str_lit("const"),        Token_Hash,      FieldFlag_const},
+	{str_lit("any_int"),      Token_Hash,      FieldFlag_any_int},
+	{str_lit("subtype"),      Token_Hash,      FieldFlag_subtype},
+	{str_lit("by_ptr"),       Token_Hash,      FieldFlag_by_ptr},
+	{str_lit("no_broadcast"), Token_Hash,      FieldFlag_no_broadcast},
 };
 
 
@@ -6289,7 +6310,7 @@ gb_internal ParseFileError parse_packages(Parser *p, String init_filename) {
 	if (!path_is_directory(init_fullpath)) {
 		String const ext = str_lit(".odin");
 		if (!string_ends_with(init_fullpath, ext)) {
-			error_line("Expected either a directory or a .odin file, got '%.*s'\n", LIT(init_filename));
+			error({}, "Expected either a directory or a .odin file, got '%.*s'\n", LIT(init_filename));
 			return ParseFile_WrongExtension;
 		}
 	} else if (init_fullpath.len != 0) {
@@ -6302,7 +6323,7 @@ gb_internal ParseFileError parse_packages(Parser *p, String init_filename) {
 			String short_path = filename_from_path(path);
 			char *cpath = alloc_cstring(temporary_allocator(), short_path);
 			if (gb_file_exists(cpath)) {
-			    	error_line("Please specify the executable name with -out:<string> as a directory exists with the same name in the current working directory");
+			    	error({}, "Please specify the executable name with -out:<string> as a directory exists with the same name in the current working directory");
 			    	return ParseFile_DirectoryAlreadyExists;
 			}
 		}
@@ -6338,7 +6359,7 @@ gb_internal ParseFileError parse_packages(Parser *p, String init_filename) {
 			if (!path_is_directory(fullpath)) {
 				String const ext = str_lit(".odin");
 				if (!string_ends_with(fullpath, ext)) {
-					error_line("Expected either a directory or a .odin file, got '%.*s'\n", LIT(fullpath));
+					error({}, "Expected either a directory or a .odin file, got '%.*s'\n", LIT(fullpath));
 					return ParseFile_WrongExtension;
 				}
 			}

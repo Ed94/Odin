@@ -89,6 +89,7 @@ gb_internal void check_or_else_split_types(CheckerContext *c, Operand *x, String
 
 
 gb_internal void check_or_else_expr_no_value_error(CheckerContext *c, String const &name, Operand const &x, Type *type_hint) {
+	ERROR_BLOCK();
 	gbString t = type_to_string(x.type);
 	error(x.expr, "'%.*s' does not return a value, value is of type %s", LIT(name), t);
 	if (is_type_union(type_deref(x.type))) {
@@ -1565,6 +1566,7 @@ gb_internal bool check_builtin_procedure_directive(CheckerContext *c, Operand *o
 		}
 
 		if (!operand->value.value_bool) {
+			ERROR_BLOCK();
 			gbString arg1 = expr_to_string(ce->args[0]);
 			gbString arg2 = {};
 
@@ -1590,6 +1592,7 @@ gb_internal bool check_builtin_procedure_directive(CheckerContext *c, Operand *o
 		operand->type = t_untyped_bool;
 		operand->mode = Addressing_Constant;
 	} else if (name == "panic") {
+		ERROR_BLOCK();
 		if (ce->args.count != 1) {
 			error(call, "'#panic' expects 1 argument, got %td", ce->args.count);
 			return false;
@@ -3390,6 +3393,7 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 			elem->Struct.tags = gb_alloc_array(permanent_allocator(), String, fields.count);
 			elem->Struct.node = dummy_node_struct;
 			type_set_offsets(elem);
+			wait_signal_set(&elem->Struct.fields_wait_signal);
 		}
 
 		Type *soa_type = make_soa_struct_slice(c, dummy_node_soa, nullptr, elem);
@@ -3763,6 +3767,7 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 				soa_struct->Struct.tags[i] = old_struct->Struct.tags[i];
 			}
 		}
+		wait_signal_set(&soa_struct->Struct.fields_wait_signal);
 
 		Token token = {};
 		token.string = str_lit("Base_Type");

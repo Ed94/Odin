@@ -79,7 +79,6 @@ gb_internal Type *   check_type_expr                (CheckerContext *c, Ast *exp
 gb_internal Type *   make_optional_ok_type          (Type *value, bool typed=true);
 gb_internal Entity * check_selector                 (CheckerContext *c, Operand *operand, Ast *node, Type *type_hint);
 gb_internal Entity * check_ident                    (CheckerContext *c, Operand *o, Ast *n, Type *named_type, Type *type_hint, bool allow_import_name);
-gb_internal Entity * find_polymorphic_record_entity (CheckerContext *c, Type *original_type, isize param_count, Array<Operand> const &ordered_operands, bool *failure);
 gb_internal void     check_not_tuple                (CheckerContext *c, Operand *operand);
 gb_internal void     convert_to_typed               (CheckerContext *c, Operand *operand, Type *target_type);
 gb_internal gbString expr_to_string                 (Ast *expression);
@@ -120,6 +119,8 @@ gb_internal bool is_diverging_expr(Ast *expr);
 gb_internal isize get_procedure_param_count_excluding_defaults(Type *pt, isize *param_count_);
 
 gb_internal bool is_expr_inferred_fixed_array(Ast *type_expr);
+
+gb_internal Entity *find_polymorphic_record_entity(GenTypesData *found_gen_types, isize param_count, Array<Operand> const &ordered_operands);
 
 enum LoadDirectiveResult {
 	LoadDirective_Success  = 0,
@@ -623,7 +624,7 @@ gb_internal bool check_cast_internal(CheckerContext *c, Operand *x, Type *type);
 
 #define MAXIMUM_TYPE_DISTANCE 10
 
-gb_internal i64 check_distance_between_types(CheckerContext *c, Operand *operand, Type *type) {
+gb_internal i64 check_distance_between_types(CheckerContext *c, Operand *operand, Type *type, bool allow_array_programming) {
 	if (c == nullptr) {
 		GB_ASSERT(operand->mode == Addressing_Value);
 		GB_ASSERT(is_type_typed(operand->type));
@@ -832,7 +833,7 @@ gb_internal i64 check_distance_between_types(CheckerContext *c, Operand *operand
 
 		if (dst->Union.variants.count == 1) {
 			Type *vt = dst->Union.variants[0];
-			i64 score = check_distance_between_types(c, operand, vt);
+			i64 score = check_distance_between_types(c, operand, vt, allow_array_programming);
 			if (score >= 0) {
 				return score+2;
 			}
@@ -840,7 +841,7 @@ gb_internal i64 check_distance_between_types(CheckerContext *c, Operand *operand
 			i64 prev_lowest_score = -1;
 			i64 lowest_score = -1;
 			for (Type *vt : dst->Union.variants) {
-				i64 score = check_distance_between_types(c, operand, vt);
+				i64 score = check_distance_between_types(c, operand, vt, allow_array_programming);
 				if (score >= 0) {
 					if (lowest_score < 0) {
 						lowest_score = score;
@@ -863,14 +864,14 @@ gb_internal i64 check_distance_between_types(CheckerContext *c, Operand *operand
 	}
 
 	if (is_type_relative_pointer(dst)) {
-		i64 score = check_distance_between_types(c, operand, dst->RelativePointer.pointer_type);
+		i64 score = check_distance_between_types(c, operand, dst->RelativePointer.pointer_type, allow_array_programming);
 		if (score >= 0) {
 			return score+2;
 		}
 	}
 
 	if (is_type_relative_multi_pointer(dst)) {
-		i64 score = check_distance_between_types(c, operand, dst->RelativeMultiPointer.pointer_type);
+		i64 score = check_distance_between_types(c, operand, dst->RelativeMultiPointer.pointer_type, allow_array_programming);
 		if (score >= 0) {
 			return score+2;
 		}
@@ -896,19 +897,21 @@ gb_internal i64 check_distance_between_types(CheckerContext *c, Operand *operand
 		}
 	}
 
-	if (is_type_array(dst)) {
-		Type *elem = base_array_type(dst);
-		i64 distance = check_distance_between_types(c, operand, elem);
-		if (distance >= 0) {
-			return distance + 6;
+	if (allow_array_programming) {
+		if (is_type_array(dst)) {
+			Type *elem = base_array_type(dst);
+			i64 distance = check_distance_between_types(c, operand, elem, allow_array_programming);
+			if (distance >= 0) {
+				return distance + 6;
+			}
 		}
-	}
 
-	if (is_type_simd_vector(dst)) {
-		Type *dst_elem = base_array_type(dst);
-		i64 distance = check_distance_between_types(c, operand, dst_elem);
-		if (distance >= 0) {
-			return distance + 6;
+		if (is_type_simd_vector(dst)) {
+			Type *dst_elem = base_array_type(dst);
+			i64 distance = check_distance_between_types(c, operand, dst_elem, allow_array_programming);
+			if (distance >= 0) {
+				return distance + 6;
+			}
 		}
 	}
 	
@@ -918,7 +921,7 @@ gb_internal i64 check_distance_between_types(CheckerContext *c, Operand *operand
 		}
 		if (dst->Matrix.row_count == dst->Matrix.column_count) {
 			Type *dst_elem = base_array_type(dst);
-			i64 distance = check_distance_between_types(c, operand, dst_elem);
+			i64 distance = check_distance_between_types(c, operand, dst_elem, allow_array_programming);
 			if (distance >= 0) {
 				return distance + 7;
 			}
@@ -966,9 +969,9 @@ gb_internal i64 assign_score_function(i64 distance, bool is_variadic=false) {
 }
 
 
-gb_internal bool check_is_assignable_to_with_score(CheckerContext *c, Operand *operand, Type *type, i64 *score_, bool is_variadic=false) {
+gb_internal bool check_is_assignable_to_with_score(CheckerContext *c, Operand *operand, Type *type, i64 *score_, bool is_variadic=false, bool allow_array_programming=true) {
 	i64 score = 0;
-	i64 distance = check_distance_between_types(c, operand, type);
+	i64 distance = check_distance_between_types(c, operand, type, allow_array_programming);
 	bool ok = distance >= 0;
 	if (ok) {
 		score = assign_score_function(distance, is_variadic);
@@ -978,9 +981,9 @@ gb_internal bool check_is_assignable_to_with_score(CheckerContext *c, Operand *o
 }
 
 
-gb_internal bool check_is_assignable_to(CheckerContext *c, Operand *operand, Type *type) {
+gb_internal bool check_is_assignable_to(CheckerContext *c, Operand *operand, Type *type, bool allow_array_programming=true) {
 	i64 score = 0;
-	return check_is_assignable_to_with_score(c, operand, type, &score);
+	return check_is_assignable_to_with_score(c, operand, type, &score, /*is_variadic*/false, allow_array_programming);
 }
 
 gb_internal bool internal_check_is_assignable_to(Type *src, Type *dst) {
@@ -1172,6 +1175,16 @@ gb_internal void check_assignment(CheckerContext *c, Operand *operand, Type *typ
 				      type_str, type_extra,
 				      LIT(context_name));
 				check_assignment_error_suggestion(c, operand, type);
+
+				if (context_name == "procedure argument") {
+					Type *src = base_type(operand->type);
+					Type *dst = base_type(type);
+					if (is_type_slice(src) && are_types_identical(src->Slice.elem, dst)) {
+						gbString a = expr_to_string(operand->expr);
+						error_line("\tSuggestion: Did you mean to pass the slice into the variadic parameter with ..%s?\n\n", a);
+						gb_string_free(a);
+					}
+				}
 			}
 			break;
 		}
@@ -1597,7 +1610,7 @@ gb_internal Entity *check_ident(CheckerContext *c, Operand *o, Ast *n, Type *nam
 
 			for (CIdentSuggestion const &suggestion : c_ident_suggestions) {
 				if (name == suggestion.name) {
-					error_line("\tSuggestion: Did you mean %s\n", LIT(suggestion.msg));
+					error_line("\tSuggestion: Did you mean %.*s\n", LIT(suggestion.msg));
 				}
 			}
 		}
@@ -1725,7 +1738,7 @@ gb_internal Entity *check_ident(CheckerContext *c, Operand *o, Ast *n, Type *nam
 		if (check_cycle(c, e, true)) {
 			o->type = t_invalid;
 		}
-		if (o->type != nullptr && type->kind == Type_Named && o->type->Named.type_name->TypeName.is_type_alias) {
+		if (o->type != nullptr && o->type->kind == Type_Named && o->type->Named.type_name->TypeName.is_type_alias) {
 			o->type = base_type(o->type);
 		}
 
@@ -1798,6 +1811,21 @@ gb_internal bool check_unary_op(CheckerContext *c, Operand *o, Token op) {
 		}
 		break;
 
+	case Token_Mul:
+		{
+			ERROR_BLOCK();
+			error(op, "Operator '%.*s' is not a valid unary operator in Odin", LIT(op.string));
+			if (is_type_pointer(o->type)) {
+				str = expr_to_string(o->expr);
+				error_line("\tSuggestion: Did you mean '%s^'?\n", str);
+				o->type = type_deref(o->type);
+			} else if (is_type_multi_pointer(o->type)) {
+				str = expr_to_string(o->expr);
+				error_line("\tSuggestion: The value is a multi-pointer, did you mean '%s[0]'?\n", str);
+				o->type = type_deref(o->type, true);
+			}
+		}
+		break;
 	default:
 		error(op, "Unknown operator '%.*s'", LIT(op.string));
 		return false;
@@ -3140,6 +3168,14 @@ gb_internal bool check_is_castable_to(CheckerContext *c, Operand *operand, Type 
 	// rawptr -> proc
 	if (is_type_rawptr(src) && is_type_proc(dst)) {
 		return true;
+	}
+
+
+	if (is_type_array(dst)) {
+		Type *elem = base_array_type(dst);
+		if (check_is_castable_to(c, operand, elem)) {
+			return true;
+		}
 	}
 
 	if (is_type_simd_vector(src) && is_type_simd_vector(dst)) {
@@ -4875,10 +4911,18 @@ gb_internal Entity *check_selector(CheckerContext *c, Operand *operand, Ast *nod
 	Selection sel = {}; // NOTE(bill): Not used if it's an import name
 
 	if (!c->allow_arrow_right_selector_expr && se->token.kind == Token_ArrowRight) {
+		ERROR_BLOCK();
 		error(node, "Illegal use of -> selector shorthand outside of a call");
-		operand->mode = Addressing_Invalid;
-		operand->expr = node;
-		return nullptr;
+		gbString x = expr_to_string(se->expr);
+		gbString y = expr_to_string(se->selector);
+		error_line("\tSuggestion: Did you mean '%s.%s'?\n", x, y);
+		gb_string_free(y);
+		gb_string_free(x);
+
+		// TODO(bill): Should this terminate here or propagate onwards?
+		// operand->mode = Addressing_Invalid;
+		// operand->expr = node;
+		// return nullptr;
 	}
 
 	operand->expr = node;
@@ -5787,10 +5831,14 @@ gb_internal CallArgumentError check_call_arguments_internal(CheckerContext *c, A
 			Operand *variadic_operand = &ordered_operands[pt->variadic_index];
 
 			if (vari_expand) {
-				GB_ASSERT(variadic_operands.count != 0);
-				*variadic_operand = variadic_operands[0];
-				variadic_operand->type = default_type(variadic_operand->type);
-				actually_variadic = true;
+				if (variadic_operands.count == 0) {
+					error(call, "'..' in the wrong position");
+				} else {
+					GB_ASSERT(variadic_operands.count != 0);
+					*variadic_operand = variadic_operands[0];
+					variadic_operand->type = default_type(variadic_operand->type);
+					actually_variadic = true;
+				}
 			} else {
 				AstFile *f = call->file();
 
@@ -5854,12 +5902,18 @@ gb_internal CallArgumentError check_call_arguments_internal(CheckerContext *c, A
 	}
 
 	auto eval_param_and_score = [](CheckerContext *c, Operand *o, Type *param_type, CallArgumentError &err, bool param_is_variadic, Entity *e, bool show_error) -> i64 {
+		bool allow_array_programming = !(e && (e->flags & EntityFlag_NoBroadcast));
 		i64 s = 0;
-		if (!check_is_assignable_to_with_score(c, o, param_type, &s, param_is_variadic)) {
+		if (!check_is_assignable_to_with_score(c, o, param_type, &s, param_is_variadic, allow_array_programming)) {
 			bool ok = false;
-			if (e && e->flags & EntityFlag_AnyInt) {
+			if (e && (e->flags & EntityFlag_AnyInt)) {
 				if (is_type_integer(param_type)) {
 					ok = check_is_castable_to(c, o, param_type);
+				}
+			}
+			if (!allow_array_programming && check_is_assignable_to_with_score(c, o, param_type, nullptr, param_is_variadic, !allow_array_programming)) {
+				if (show_error) {
+					error(o->expr, "'#no_broadcast' disallows automatic broadcasting a value across all elements of an array-like type in a procedure argument");
 				}
 			}
 			if (ok) {
@@ -5867,18 +5921,9 @@ gb_internal CallArgumentError check_call_arguments_internal(CheckerContext *c, A
 			} else {
 				if (show_error) {
 					check_assignment(c, o, param_type, str_lit("procedure argument"));
-
-					Type *src = base_type(o->type);
-					Type *dst = base_type(param_type);
-					if (is_type_slice(src) && are_types_identical(src->Slice.elem, dst)) {
-						gbString a = expr_to_string(o->expr);
-						error_line("\tSuggestion: Did you mean to pass the slice into the variadic parameter with ..%s?\n\n", a);
-						gb_string_free(a);
-					}
 				}
 				err = CallArgumentError_WrongTypes;
 			}
-
 		} else if (show_error) {
 			check_assignment(c, o, param_type, str_lit("procedure argument"));
 		}
@@ -5963,12 +6008,13 @@ gb_internal CallArgumentError check_call_arguments_internal(CheckerContext *c, A
 			if (param_is_variadic) {
 				continue;
 			}
-			score += eval_param_and_score(c, o, e->type, err, param_is_variadic, e, show_error);
+			score += eval_param_and_score(c, o, e->type, err, false, e, show_error);
 		}
 	}
 
 	if (variadic) {
-		Type *slice = pt->params->Tuple.variables[pt->variadic_index]->type;
+		Entity *var_entity = pt->params->Tuple.variables[pt->variadic_index];
+		Type *slice = var_entity->type;
 		GB_ASSERT(is_type_slice(slice));
 		Type *elem = base_type(slice)->Slice.elem;
 		Type *t = elem;
@@ -5994,7 +6040,7 @@ gb_internal CallArgumentError check_call_arguments_internal(CheckerContext *c, A
 					return CallArgumentError_MultipleVariadicExpand;
 				}
 			}
-			score += eval_param_and_score(c, o, t, err, true, nullptr, show_error);
+			score += eval_param_and_score(c, o, t, err, true, var_entity, show_error);
 		}
 	}
 
@@ -6122,7 +6168,10 @@ gb_internal bool evaluate_where_clauses(CheckerContext *ctx, Ast *call_expr, Sco
 						}
 					}
 
-					if (call_expr) error(call_expr, "at caller location");
+					if (call_expr) {
+						TokenPos pos = ast_token(call_expr).pos;
+						error_line("%s at caller location\n", token_pos_to_string(pos));
+					}
 				}
 				return false;
 			}
@@ -7123,8 +7172,12 @@ gb_internal CallArgumentError check_polymorphic_record_type(CheckerContext *c, O
 	}
 
 	{
-		bool failure = false;
-		Entity *found_entity = find_polymorphic_record_entity(c, original_type, param_count, ordered_operands, &failure);
+		GenTypesData *found_gen_types = ensure_polymorphic_record_entity_has_gen_types(c, original_type);
+
+		mutex_lock(&found_gen_types->mutex);
+		defer (mutex_unlock(&found_gen_types->mutex));
+		Entity *found_entity = find_polymorphic_record_entity(found_gen_types, param_count, ordered_operands);
+
 		if (found_entity) {
 			operand->mode = Addressing_Type;
 			operand->type = found_entity->type;
@@ -8417,6 +8470,7 @@ gb_internal ExprKind check_or_return_expr(CheckerContext *c, Operand *o, Ast *no
 				// NOTE(bill): allow implicit conversion between boolean types
 				// within 'or_return' to improve the experience using third-party code
 			} else if (!check_is_assignable_to(c, &rhs, end_type)) {
+				ERROR_BLOCK();
 				// TODO(bill): better error message
 				gbString a = type_to_string(right_type);
 				gbString b = type_to_string(end_type);
@@ -8824,6 +8878,7 @@ gb_internal ExprKind check_compound_literal(CheckerContext *c, Operand *o, Ast *
 			break;
 		}
 
+		wait_signal_until_available(&t->Struct.fields_wait_signal);
 		isize field_count = t->Struct.fields.count;
 		isize min_field_count = t->Struct.fields.count;
 		for (isize i = min_field_count-1; i >= 0; i--) {
@@ -9988,6 +10043,7 @@ gb_internal ExprKind check_index_expr(CheckerContext *c, Operand *o, Ast *node, 
 	bool ok = check_index_value(c, t, false, ie->index, max_count, &index, index_type_hint);
 	if (is_const) {
 		if (index < 0) {
+			ERROR_BLOCK();
 			gbString str = expr_to_string(o->expr);
 			error(o->expr, "Cannot index a constant '%s'", str);
 			if (!build_context.terse_errors) {
@@ -10004,6 +10060,7 @@ gb_internal ExprKind check_index_expr(CheckerContext *c, Operand *o, Ast *node, 
 			bool finish = false;
 			o->value = get_constant_field_single(c, value, cast(i32)index, &success, &finish);
 			if (!success) {
+				ERROR_BLOCK();
 				gbString str = expr_to_string(o->expr);
 				error(o->expr, "Cannot index a constant '%s' with index %lld", str, cast(long long)index);
 				if (!build_context.terse_errors) {
@@ -10194,6 +10251,7 @@ gb_internal ExprKind check_slice_expr(CheckerContext *c, Operand *o, Ast *node, 
 			}
 		}
 		if (!all_constant) {
+			ERROR_BLOCK();
 			gbString str = expr_to_string(o->expr);
 			error(o->expr, "Cannot slice '%s' with non-constant indices", str);
 			if (!build_context.terse_errors) {
@@ -11148,6 +11206,9 @@ gb_internal gbString write_expr_to_string(gbString str, Ast *node, bool shorthan
 		if (f->flags&FieldFlag_any_int) {
 			str = gb_string_appendc(str, "#any_int ");
 		}
+		if (f->flags&FieldFlag_no_broadcast) {
+			str = gb_string_appendc(str, "#no_broadcast ");
+		}
 		if (f->flags&FieldFlag_const) {
 			str = gb_string_appendc(str, "#const ");
 		}
@@ -11213,6 +11274,18 @@ gb_internal gbString write_expr_to_string(gbString str, Ast *node, bool shorthan
 				}
 				if (field->flags&FieldFlag_c_vararg) {
 					str = gb_string_appendc(str, "#c_vararg ");
+				}
+				if (field->flags&FieldFlag_any_int) {
+					str = gb_string_appendc(str, "#any_int ");
+				}
+				if (field->flags&FieldFlag_no_broadcast) {
+					str = gb_string_appendc(str, "#no_broadcast ");
+				}
+				if (field->flags&FieldFlag_const) {
+					str = gb_string_appendc(str, "#const ");
+				}
+				if (field->flags&FieldFlag_subtype) {
+					str = gb_string_appendc(str, "#subtype ");
 				}
 
 				str = write_expr_to_string(str, field->type, shorthand);
