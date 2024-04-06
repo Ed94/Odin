@@ -578,7 +578,10 @@ gb_internal void lb_begin_procedure_body(lbProcedure *p) {
 				defer (param_index += 1);
 
 				if (arg_type->kind == lbArg_Ignore) {
-					continue;
+					// Even though it is an ignored argument, it might still be referenced in the
+					// body.
+					lbValue dummy = lb_add_local_generated(p, e->type, false).addr;
+					lb_add_entity(p->module, e, dummy);
 				} else if (arg_type->kind == lbArg_Direct) {
 					if (e->token.string.len != 0 && !is_blank_ident(e->token.string)) {
 						LLVMTypeRef param_type = lb_type(p->module, e->type);
@@ -1051,6 +1054,7 @@ gb_internal lbValue lb_emit_call(lbProcedure *p, lbValue value, Array<lbValue> c
 			Type *original_type = e->type;
 			lbArgType *arg = &ft->args[param_index];
 			if (arg->kind == lbArg_Ignore) {
+				param_index += 1;
 				continue;
 			}
 
@@ -3359,6 +3363,9 @@ gb_internal lbValue lb_build_call_expr_internal(lbProcedure *p, Ast *expr) {
 					for (Ast *var_arg : variadic) {
 						lbValue arg = lb_build_expr(p, var_arg);
 						if (is_type_any(elem_type)) {
+							if (is_type_untyped_nil(arg.type)) {
+								arg = lb_const_nil(p->module, t_rawptr);
+							}
 							array_add(&args, lb_emit_conv(p, arg, c_vararg_promote_type(default_type(arg.type))));
 						} else {
 							array_add(&args, lb_emit_conv(p, arg, c_vararg_promote_type(elem_type)));
@@ -3423,6 +3430,30 @@ gb_internal lbValue lb_build_call_expr_internal(lbProcedure *p, Ast *expr) {
 		if (e->kind == Entity_TypeName) {
 			lbValue value = lb_const_nil(p->module, e->type);
 			args[param_index] = value;
+		} else if (is_c_vararg && pt->variadic && pt->variadic_index == param_index) {
+			GB_ASSERT(param_index == pt->param_count-1);
+			Type *slice_type = e->type;
+			GB_ASSERT(slice_type->kind == Type_Slice);
+			Type *elem_type = slice_type->Slice.elem;
+
+			if (fv->value->kind == Ast_CompoundLit) {
+				ast_node(literal, CompoundLit, fv->value);
+				for (Ast *var_arg : literal->elems) {
+					lbValue arg = lb_build_expr(p, var_arg);
+					if (is_type_any(elem_type)) {
+						if (is_type_untyped_nil(arg.type)) {
+							arg = lb_const_nil(p->module, t_rawptr);
+						}
+						array_add(&args, lb_emit_conv(p, arg, c_vararg_promote_type(default_type(arg.type))));
+					} else {
+						array_add(&args, lb_emit_conv(p, arg, c_vararg_promote_type(elem_type)));
+					}
+				}
+			} else {
+				lbValue value = lb_build_expr(p, fv->value);
+				GB_ASSERT(!is_type_tuple(value.type));
+				array_add(&args, lb_emit_conv(p, value, c_vararg_promote_type(value.type)));
+			}
 		} else {
 			lbValue value = lb_build_expr(p, fv->value);
 			GB_ASSERT(!is_type_tuple(value.type));

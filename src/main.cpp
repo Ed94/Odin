@@ -296,6 +296,8 @@ enum BuildFlagKind {
 	BuildFlag_ErrorPosStyle,
 	BuildFlag_MaxErrorCount,
 
+	BuildFlag_MinLinkLibs,
+
 	// internal use only
 	BuildFlag_InternalIgnoreLazy,
 	BuildFlag_InternalIgnoreLLVMBuild,
@@ -484,6 +486,8 @@ gb_internal bool parse_build_flags(Array<String> args) {
 	add_flag(&build_flags, BuildFlag_JsonErrors,              str_lit("json-errors"),               BuildFlagParam_None,    Command_all);
 	add_flag(&build_flags, BuildFlag_ErrorPosStyle,           str_lit("error-pos-style"),           BuildFlagParam_String,  Command_all);
 	add_flag(&build_flags, BuildFlag_MaxErrorCount,           str_lit("max-error-count"),           BuildFlagParam_Integer, Command_all);
+
+	add_flag(&build_flags, BuildFlag_MinLinkLibs,             str_lit("min-link-libs"),             BuildFlagParam_None,    Command__does_build);
 
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLazy,      str_lit("internal-ignore-lazy"),      BuildFlagParam_None,    Command_all);
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLLVMBuild, str_lit("internal-ignore-llvm-build"),BuildFlagParam_None,    Command_all);
@@ -1214,6 +1218,10 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							}
 							break;
 						}
+
+						case BuildFlag_MinLinkLibs:
+							build_context.min_link_libs = true;
+							break;
 
 						case BuildFlag_InternalIgnoreLazy:
 							build_context.ignore_lazy = true;
@@ -2008,6 +2016,11 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(2, "If not set, the default max error count is %d.", DEFAULT_MAX_ERROR_COLLECTOR_COUNT);
 		print_usage_line(0, "");
 
+		print_usage_line(1, "-min-link-libs");
+		print_usage_line(2, "If set, the number of linked libraries will be minimized to prevent duplications.");
+		print_usage_line(2, "This is useful for so called \"dumb\" linkers compared to \"smart\" linkers.");
+		print_usage_line(0, "");
+
 		print_usage_line(1, "-foreign-error-procedures");
 		print_usage_line(2, "States that the error procedures used in the runtime are defined in a separate translation unit.");
 		print_usage_line(0, "");
@@ -2694,6 +2707,9 @@ int main(int arg_count, char const **arg_ptr) {
 		print_all_errors();
 		return 1;
 	}
+	if (any_warnings()) {
+		print_all_errors();
+	}
 
 	MAIN_TIME_SECTION("type check");
 
@@ -2706,6 +2722,10 @@ int main(int arg_count, char const **arg_ptr) {
 		print_all_errors();
 		return 1;
 	}
+	if (any_warnings()) {
+		print_all_errors();
+	}
+
 
 	if (build_context.command_kind == Command_strip_semicolon) {
 		return strip_semicolons(parser);
