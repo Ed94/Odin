@@ -212,6 +212,7 @@ gb_internal void usage(String argv0) {
 	print_usage_line(1, "doc               Generates documentation on a directory of .odin files.");
 	print_usage_line(1, "version           Prints version.");
 	print_usage_line(1, "report            Prints information useful to reporting a bug.");
+	print_usage_line(1, "root              Prints the root path where Odin looks for the builtin collections.");
 	print_usage_line(0, "");
 	print_usage_line(0, "For further details on a command, invoke command help:");
 	print_usage_line(1, "e.g. `odin build -help` or `odin help build`");
@@ -253,6 +254,8 @@ enum BuildFlagKind {
 	BuildFlag_Vet,
 	BuildFlag_VetShadowing,
 	BuildFlag_VetUnused,
+	BuildFlag_VetUnusedImports,
+	BuildFlag_VetUnusedVariables,
 	BuildFlag_VetUsingStmt,
 	BuildFlag_VetUsingParam,
 	BuildFlag_VetStyle,
@@ -444,6 +447,8 @@ gb_internal bool parse_build_flags(Array<String> args) {
 
 	add_flag(&build_flags, BuildFlag_Vet,                     str_lit("vet"),                       BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_VetUnused,               str_lit("vet-unused"),                BuildFlagParam_None,    Command__does_check);
+	add_flag(&build_flags, BuildFlag_VetUnusedVariables,      str_lit("vet-unused-variables"),      BuildFlagParam_None,    Command__does_check);
+	add_flag(&build_flags, BuildFlag_VetUnusedImports,        str_lit("vet-unused-imports"),        BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_VetShadowing,            str_lit("vet-shadowing"),             BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_VetUsingStmt,            str_lit("vet-using-stmt"),            BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_VetUsingParam,           str_lit("vet-using-param"),           BuildFlagParam_None,    Command__does_check);
@@ -1026,10 +1031,9 @@ gb_internal bool parse_build_flags(Array<String> args) {
 						case BuildFlag_UseSeparateModules:
 							build_context.use_separate_modules = true;
 							break;
-						case BuildFlag_NoThreadedChecker: {
+						case BuildFlag_NoThreadedChecker:
 							build_context.no_threaded_checker = true;
 							break;
-						}
 						case BuildFlag_ShowDebugMessages:
 							build_context.show_debug_messages = true;
 							break;
@@ -1037,12 +1041,14 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							build_context.vet_flags |= VetFlag_All;
 							break;
 
-						case BuildFlag_VetUnused:     build_context.vet_flags |= VetFlag_Unused;     break;
-						case BuildFlag_VetShadowing:  build_context.vet_flags |= VetFlag_Shadowing;  break;
-						case BuildFlag_VetUsingStmt:  build_context.vet_flags |= VetFlag_UsingStmt;  break;
-						case BuildFlag_VetUsingParam: build_context.vet_flags |= VetFlag_UsingParam; break;
-						case BuildFlag_VetStyle:      build_context.vet_flags |= VetFlag_Style;      break;
-						case BuildFlag_VetSemicolon:  build_context.vet_flags |= VetFlag_Semicolon;  break;
+						case BuildFlag_VetUnusedVariables: build_context.vet_flags |= VetFlag_UnusedVariables; break;
+						case BuildFlag_VetUnusedImports:   build_context.vet_flags |= VetFlag_UnusedImports;   break;
+						case BuildFlag_VetUnused:          build_context.vet_flags |= VetFlag_Unused;          break;
+						case BuildFlag_VetShadowing:       build_context.vet_flags |= VetFlag_Shadowing;       break;
+						case BuildFlag_VetUsingStmt:       build_context.vet_flags |= VetFlag_UsingStmt;       break;
+						case BuildFlag_VetUsingParam:      build_context.vet_flags |= VetFlag_UsingParam;      break;
+						case BuildFlag_VetStyle:           build_context.vet_flags |= VetFlag_Style;           break;
+						case BuildFlag_VetSemicolon:       build_context.vet_flags |= VetFlag_Semicolon;       break;
 
 						case BuildFlag_IgnoreUnknownAttributes:
 							build_context.ignore_unknown_attributes = true;
@@ -1875,12 +1881,22 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(2, "Does extra checks on the code.");
 		print_usage_line(2, "Extra checks include:");
 		print_usage_line(3, "-vet-unused");
+		print_usage_line(3, "-vet-unused-variables");
+		print_usage_line(3, "-vet-unused-imports");
 		print_usage_line(3, "-vet-shadowing");
 		print_usage_line(3, "-vet-using-stmt");
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-vet-unused");
 		print_usage_line(2, "Checks for unused declarations.");
+		print_usage_line(0, "");
+
+		print_usage_line(1, "-vet-unused-variables");
+		print_usage_line(2, "Checks for unused variable declarations.");
+		print_usage_line(0, "");
+
+		print_usage_line(1, "-vet-unused-imports");
+		print_usage_line(2, "Checks for unused import declarations.");
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-vet-shadowing");
@@ -2557,6 +2573,9 @@ int main(int arg_count, char const **arg_ptr) {
 			print_show_help(args[0], args[2]);
 			return 0;
 		}
+	} else if (command == "root") {
+		gb_printf("%.*s", LIT(odin_root_dir()));
+		return 0;
 	} else {
 		usage(args[0]);
 		return 1;
