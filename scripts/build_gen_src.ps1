@@ -91,7 +91,7 @@ build-gensrc
 
 function run-gensrc
 {
-	Push-Location $path_src
+	Push-Location $path_root
 	if ( Test-Path( $exe_gensrc ) ) {
 		write-host "`nRunning gen_src"
 		$time_taken = Measure-Command { & $exe_gensrc

@@ -412,7 +412,7 @@ The following are provided predefined by the library as they are commonly used:
 * `spec_constinit`
 * `spec_extern_linkage` (extern)
 * `spec_final`
-* `spec_forceinline`
+* `Spec_gb_inline`
 * `spec_global` (global macro)
 * `spec_inline`
 * `spec_internal_linkage` (internal macro)

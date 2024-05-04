@@ -415,8 +415,8 @@ namespace ESpecifier
 		Constinit,
 		Explicit,
 		External_Linkage,
-		ForceInline,
-		Global,
+		gb_inline,
+		gb_global,
 		Inline,
 		Internal_Linkage,
 		Local_Persist,
@@ -427,7 +427,7 @@ namespace ESpecifier
 		Register,
 		RValue,
 		Static,
-		Thread_Local,
+		gb_thread_local,
 		Virtual,
 		Const,
 		Final,
@@ -446,32 +446,32 @@ namespace ESpecifier
 	StrC to_str( Type type )
 	{
 		local_persist StrC lookup[] {
-			{ sizeof( "INVALID" ),       "INVALID"       },
-			{ sizeof( "consteval" ),     "consteval"     },
-			{ sizeof( "constexpr" ),     "constexpr"     },
-			{ sizeof( "constinit" ),     "constinit"     },
-			{ sizeof( "explicit" ),      "explicit"      },
-			{ sizeof( "extern" ),        "extern"        },
-			{ sizeof( "FORCEINLINE" ),   "FORCEINLINE"   },
-			{ sizeof( "global" ),        "global"        },
-			{ sizeof( "inline" ),        "inline"        },
-			{ sizeof( "internal" ),      "internal"      },
-			{ sizeof( "local_persist" ), "local_persist" },
-			{ sizeof( "mutable" ),       "mutable"       },
-			{ sizeof( "neverinline" ),   "neverinline"   },
-			{ sizeof( "*" ),             "*"             },
-			{ sizeof( "&" ),             "&"             },
-			{ sizeof( "register" ),      "register"      },
-			{ sizeof( "&&" ),            "&&"            },
-			{ sizeof( "static" ),        "static"        },
-			{ sizeof( "thread_local" ),  "thread_local"  },
-			{ sizeof( "virtual" ),       "virtual"       },
-			{ sizeof( "const" ),         "const"         },
-			{ sizeof( "final" ),         "final"         },
-			{ sizeof( "noexcept" ),      "noexcept"      },
-			{ sizeof( "override" ),      "override"      },
-			{ sizeof( "= 0" ),           "= 0"           },
-			{ sizeof( "volatile" ),      "volatile"      },
+			{ sizeof( "INVALID" ),          "INVALID"       },
+			{ sizeof( "consteval" ),        "consteval"     },
+			{ sizeof( "constexpr" ),        "constexpr"     },
+			{ sizeof( "constinit" ),        "constinit"     },
+			{ sizeof( "explicit" ),         "explicit"      },
+			{ sizeof( "extern" ),           "extern"        },
+			{ sizeof( "gb_inline" ),        "gb_inline"     },
+			{ sizeof( "gb_global" ),        "gb_global"     },
+			{ sizeof( "inline" ),           "inline"        },
+			{ sizeof( "internal" ),         "internal"      },
+			{ sizeof( "local_persist" ),    "local_persist" },
+			{ sizeof( "mutable" ),          "mutable"       },
+			{ sizeof( "neverinline" ),      "neverinline"   },
+			{ sizeof( "*" ),                "*"             },
+			{ sizeof( "&" ),                "&"             },
+			{ sizeof( "register" ),         "register"      },
+			{ sizeof( "&&" ),               "&&"            },
+			{ sizeof( "static" ),           "static"        },
+			{ sizeof( "gb_thread_local" ), "gb_thread_local"  },
+			{ sizeof( "virtual" ),         "virtual"       },
+			{ sizeof( "const" ),           "const"         },
+			{ sizeof( "final" ),           "final"         },
+			{ sizeof( "noexcept" ),        "noexcept"      },
+			{ sizeof( "override" ),        "override"      },
+			{ sizeof( "= 0" ),             "= 0"           },
+			{ sizeof( "volatile" ),        "volatile"      },
 		};
 		return lookup[type];
 	}
@@ -6401,7 +6401,7 @@ extern CodeSpecifiers spec_constexpr;
 extern CodeSpecifiers spec_constinit;
 extern CodeSpecifiers spec_extern_linkage;
 extern CodeSpecifiers spec_final;
-extern CodeSpecifiers spec_FORCEINLINE;
+extern CodeSpecifiers Spec_gb_inline;
 extern CodeSpecifiers spec_global;
 extern CodeSpecifiers spec_inline;
 extern CodeSpecifiers spec_internal_linkage;
@@ -6416,7 +6416,7 @@ extern CodeSpecifiers spec_ref;
 extern CodeSpecifiers spec_register;
 extern CodeSpecifiers spec_rvalue;
 extern CodeSpecifiers spec_static_member;
-extern CodeSpecifiers spec_thread_local;
+extern CodeSpecifiers spec_gb_thread_local;
 extern CodeSpecifiers spec_virtual;
 extern CodeSpecifiers spec_volatile;
 
