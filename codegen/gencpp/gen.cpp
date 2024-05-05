@@ -85,7 +85,7 @@ global CodeSpecifiers spec_final;
 global CodeSpecifiers spec_gb_inline;
 global CodeSpecifiers spec_gb_global;
 global CodeSpecifiers spec_inline;
-global CodeSpecifiers spec_internal_linkage;
+global CodeSpecifiers spec_gb_internal;
 global CodeSpecifiers spec_local_persist;
 global CodeSpecifiers spec_mutable;
 global CodeSpecifiers spec_noexcept;
@@ -3016,7 +3016,7 @@ internal void define_constants()
 	def_constant_spec( gb_inline, ESpecifier::gb_inline );
 	def_constant_spec( gb_global, ESpecifier::gb_global );
 	def_constant_spec( inline, ESpecifier::Inline );
-	def_constant_spec( internal_linkage, ESpecifier::Internal_Linkage );
+	def_constant_spec( gb_internal, ESpecifier::gb_internal );
 	def_constant_spec( local_persist, ESpecifier::Local_Persist );
 	def_constant_spec( mutable, ESpecifier::Mutable );
 	def_constant_spec( neverinline, ESpecifier::NeverInline );
@@ -5668,8 +5668,7 @@ namespace parser
 	namespace ETokType
 	{
 #define GEN_DEFINE_ATTRIBUTE_TOKENS \
-	Entry( Attribute_API_Export, "GEN_API_Export_Code" ) Entry( Attribute_API_Import, "GEN_API_Import_Code" ) \
-	Entry( gb_internal, "gb_internal" )
+	Entry( Attribute_API_Export, "GEN_API_Export_Code" ) Entry( Attribute_API_Import, "GEN_API_Import_Code" )
 
 		enum Type : u32
 		{
@@ -5739,7 +5738,7 @@ namespace parser
 			Spec_gb_inline,
 			Spec_gb_global,
 			Spec_Inline,
-			Spec_Internal_Linkage,
+			Spec_gb_internal,
 			Spec_LocalPersist,
 			Spec_Mutable,
 			Spec_NeverInline,
@@ -5770,7 +5769,6 @@ namespace parser
 			__Attributes_Start,
 			Attribute_API_Export,
 			Attribute_API_Import,
-			gb_internal,
 			NumTokens
 		};
 
@@ -5843,7 +5841,7 @@ namespace parser
 				{ sizeof( "gb_inline" ),             "gb_inline"             },
 				{ sizeof( "gb_global" ),             "gb_global"             },
 				{ sizeof( "inline" ),                "inline"                },
-				{ sizeof( "internal" ),              "internal"              },
+				{ sizeof( "gb_internal" ),           "gb_internal"              },
 				{ sizeof( "local_persist" ),         "local_persist"         },
 				{ sizeof( "mutable" ),               "mutable"               },
 				{ sizeof( "neverinline" ),           "neverinline"           },
@@ -5874,7 +5872,6 @@ namespace parser
 				{ sizeof( "__attrib_start__" ),      "__attrib_start__"      },
 				{ sizeof( "GEN_API_Export_Code" ),   "GEN_API_Export_Code"   },
 				{ sizeof( "GEN_API_Import_Code" ),   "GEN_API_Import_Code"   },
-				{ sizeof( "gb_internal" ),           "gb_internal"   },
 			};
 			return lookup[type];
 		}
@@ -8845,7 +8842,7 @@ namespace parser
 				case TokType::Spec_gb_inline :
 				case TokType::Spec_gb_global :
 				case TokType::Spec_Inline :
-				case TokType::Spec_Internal_Linkage :
+				case TokType::Spec_gb_internal :
 				case TokType::Spec_NeverInline :
 				case TokType::Spec_Static :
 				case TokType::Spec_gb_thread_local :
@@ -8866,7 +8863,7 @@ namespace parser
 							case ESpecifier::gb_inline :
 							case ESpecifier::gb_global :
 							case ESpecifier::External_Linkage :
-							case ESpecifier::Internal_Linkage :
+							case ESpecifier::gb_internal :
 							case ESpecifier::Inline :
 							case ESpecifier::Mutable :
 							case ESpecifier::NeverInline :
@@ -9382,7 +9379,7 @@ namespace parser
 			case '<' :
 			{
 				if ( currtok.Text[1] == '=' )
-					op = LEqual;
+					op = LesserEqual;
 
 				else if ( currtok.Text[1] == '<' )
 				{

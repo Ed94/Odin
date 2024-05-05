@@ -1106,5 +1106,4 @@ String csv_write_string_delimiter( AllocatorInfo a, CSV_Object* obj, char delimi
 
 #pragma endregion CSV
 
-#include "scanner.hpp"
 GEN_NS_END

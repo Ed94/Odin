@@ -1,10 +1,13 @@
+#if __clang__
 #pragma clang diagnostic ignored "-Wswitch"
+#endif
 
 #define GEN_DEFINE_LIBRARY_CODE_CONSTANTS
 #define GEN_ENFORCE_STRING_CODE_TYPES
 #define GEN_EXPOSE_BACKEND
 #include "gencpp/gen.cpp"
 #include "gencpp/gen.builder.cpp"
+#include "gencpp/gen.scanner.cpp"
 using namespace gen;
 
 #ifdef GEN_SYSTEM_WINDOWS
@@ -127,13 +130,87 @@ int gen_main()
 	gen::init();
 	log_fmt("Generating code for Odin's src\n");
 
-	// Remove TOKEN_KINDS usage in tokenizer.cpp
-	if (0)
-	{
+	StrC str_GB_STATIC_ASSERT = txt("GB_STATIC_ASSERT(");
+	PreprocessorDefines.append( get_cached_string(str_GB_STATIC_ASSERT) );
 
+	// Remove TOKEN_KINDS usage in tokenizer.cpp
+	if (1)
+	{
+		CSV_Object csv_nodes;
+		{
+			char  scratch_mem[kilobytes(32)];
+			Arena scratch = Arena::init_from_memory( scratch_mem, sizeof(scratch_mem) );
+			file_read_contents( scratch, zero_terminate, path_codegen "token_kinds.csv" );
+
+			csv_parse( &csv_nodes, scratch_mem, GlobalAllocator, false );
+		}
+		Array<ADT_Node> enum_strs = csv_nodes.nodes[0].nodes;
+		Array<ADT_Node> str_strs  = csv_nodes.nodes[1].nodes;
+
+		String enum_entries   = String::make_reserve( GlobalAllocator, kilobytes(32) );
+		String to_str_entries = String::make_reserve( GlobalAllocator, kilobytes(32) );
+
+		to_str_entries.append(txt("{"));
+		for (uw idx = 0; idx < enum_strs.num(); idx++)
+		{
+			char const* enum_str     = enum_strs[idx].string;
+			StrC        entry_to_str = to_str(str_strs [idx].string);
+
+			enum_entries.append_fmt( "Token_%s,\n", enum_str );
+			to_str_entries.append( token_fmt( "str", (StrC)entry_to_str, stringize(
+				{ cast(u8 *) "<str>", gb_size_of("<str>") -1 },\n
+			)));
+		}
+		to_str_entries.append(txt("}"));
+
+		CodeBody src_tokenizer_cpp = parse_file( path_src "tokenizer.cpp" );
+		CodeBody body = def_body( ECode::Global_Body );
+
+		body.append( def_comment(txt("NOTICE(github: Ed94): This is a generated variant of tokenizer.cpp using <repo_root>/codegen/gen_src.cpp")));
+		body.append(fmt_newline);
+
+		for (Code code = src_tokenizer_cpp.begin(); code != src_tokenizer_cpp.end(); ++ code) switch (code->Type)
+		{
+			case ECode::Preprocess_Define:
+				if ( code->Name.starts_with( txt("TOKEN_KINDS"))) {
+					// Skip, we don't want it.
+					continue;
+				}
+			continue;
+
+			case ECode::Enum:
+			{
+				if ( code->Name.starts_with(txt("TokenKind")))
+				{
+					CodeEnum enum_code = code.cast<CodeEnum>();
+					enum_code->Body = untyped_str(enum_entries);
+				}
+				body.append(code);
+			}
+			continue;
+
+			case ECode::Variable:
+				if ( code->Name.starts_with(txt("token_strings")))
+				{
+					CodeVar var = code.cast<CodeVar>();
+					var->Value = untyped_str(to_str_entries);
+				}
+				body.append(code);
+			continue;
+
+			default:
+				body.append(code);
+			continue;
+		}
+
+		Builder header = Builder::open( path_src "tokenizer.cpp" );
+		header.print(body);
+		header.write();
+		format_file( path_src "tokenizer.cpp" );
 	}
 
 	// Remove AST_KINDS macro usage in parser.hpp
+	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
 	if (1)
 	{
 		CodeBody src_parser_header = parse_file( path_src "parser.hpp" );

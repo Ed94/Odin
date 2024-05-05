@@ -418,7 +418,7 @@ namespace ESpecifier
 		gb_inline,
 		gb_global,
 		Inline,
-		Internal_Linkage,
+		gb_internal,
 		Local_Persist,
 		Mutable,
 		NeverInline,
@@ -455,7 +455,7 @@ namespace ESpecifier
 			{ sizeof( "gb_inline" ),        "gb_inline"     },
 			{ sizeof( "gb_global" ),        "gb_global"     },
 			{ sizeof( "inline" ),           "inline"        },
-			{ sizeof( "internal" ),         "internal"      },
+			{ sizeof( "gb_internal" ),      "gb_internal"      },
 			{ sizeof( "local_persist" ),    "local_persist" },
 			{ sizeof( "mutable" ),          "mutable"       },
 			{ sizeof( "neverinline" ),      "neverinline"   },
@@ -6404,7 +6404,7 @@ extern CodeSpecifiers spec_final;
 extern CodeSpecifiers Spec_gb_inline;
 extern CodeSpecifiers spec_global;
 extern CodeSpecifiers spec_inline;
-extern CodeSpecifiers spec_internal_linkage;
+extern CodeSpecifiers spec_gb_internal;
 extern CodeSpecifiers spec_local_persist;
 extern CodeSpecifiers spec_mutable;
 extern CodeSpecifiers spec_neverinline;
