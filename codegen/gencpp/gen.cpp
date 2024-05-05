@@ -1526,7 +1526,6 @@ void CodeBody::to_string( String& result )
 		if (left > 1) switch (ast->Type)
 		{
 			case ECode::Enum_Body:
-			case ECode::Union_Body:
 				result.append("\n");
 		}
 		++curr;
@@ -7605,7 +7604,7 @@ namespace parser
 
 		if ( check( TokType::Operator ) && currtok.Text[0] == '[' && currtok.Text[1] == ']' )
 		{
-			Code array_expr = untyped_str( currtok );
+			Code array_expr = untyped_str( get_cached_string(txt(" ")) );
 			eat( TokType::Operator );
 			// []
 

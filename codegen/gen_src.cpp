@@ -10,8 +10,12 @@ using namespace gen;
 #endif
 
 #pragma region Directories
+
 // Program assumes its working directory is the src directory
-#define path_src ""
+#define path_root ""
+#define path_codegen path_root "codegen/"
+#define path_src     path_root "src/"
+
 #pragma endregion Directories
 
 inline
@@ -43,12 +47,240 @@ void format_file( char const* path )
 	#undef cf_verbse
 }
 
+struct Odin_AstKind {
+	StringCached desc;
+	Code         def;
+};
+
+Array<Odin_AstKind> get_odin_ast_kinds()
+{
+	local_persist Array<Odin_AstKind> kinds = Array<Odin_AstKind>::init_reserve(GlobalAllocator, kilobytes(64));
+	{
+		local_persist s32 done_once = 0;
+		if (done_once)
+			return kinds;
+		++ done_once;
+	}
+
+	CodeType t_char_const_ptr = parse_type(code(char const*));
+
+	CodeBody ast_kinds_header = parse_file( path_codegen "ast_kinds.hpp" );
+	for ( Code code = ast_kinds_header.begin(); code != ast_kinds_header.end(); ++ code )
+	{
+		switch (code->Type)
+		{
+			using namespace ECode;
+			case Comment:
+			case Preprocess_Pragma:
+				// Ignore
+			continue;
+
+			case Variable:
+			{
+				Odin_AstKind entry { {nullptr}, {} };
+
+				CodeVar var = code.cast<CodeVar>();
+				if ( ! var->ValueType.is_equal( t_char_const_ptr ) )
+				{
+					__debugbreak();
+					log_failure("Expected all globally defined variables to be char cons* type");
+					return kinds;
+				}
+				if ( ! var->Value || ! var->Value->Content )
+				{
+					__debugbreak();
+					log_failure("Expected all globally defined variable to have a string assigned to it");
+					return kinds;
+				}
+
+				// Grab the description
+				entry.desc = var->Value->Content;
+				++ code;
+
+				// Grab the definition
+				if ( code->Type != Struct && code->Type != Typedef )
+				{
+					__debugbreak();
+					log_failure("Expected a struct or typedef for the entry definition");
+					return kinds;
+				}
+
+				entry.def = code;
+				kinds.append(entry);
+			}
+			continue;
+
+			case Struct:
+				__debugbreak();
+				log_failure("Expected a description definition as char const* first");
+				return kinds;
+			break;
+		}
+	}
+	return kinds;
+}
+
 int gen_main()
 {
 	gen::init();
 	log_fmt("Generating code for Odin's src\n");
 
+	// Remove TOKEN_KINDS usage in tokenizer.cpp
+	if (0)
+	{
 
+	}
+
+	// Remove AST_KINDS macro usage in parser.hpp
+	if (1)
+	{
+		CodeBody src_parser_header = parse_file( path_src "parser.hpp" );
+		CodeBody body = def_body( ECode::Global_Body );
+
+		body.append( def_comment(txt("NOTICE(github: Ed94): This is a generated variant of parser.hpp using <repo_root>/codegen/gen_src.cpp")));
+		body.append(fmt_newline);
+
+		Array<Odin_AstKind> ast_kinds = get_odin_ast_kinds();
+
+		for (Code code = src_parser_header.begin(); code != src_parser_header.end(); ++ code)
+		{
+			switch (code->Type)
+			{
+				case ECode::Preprocess_Define:
+					if ( code->Name.starts_with( txt("AST_KINDS"))) {
+						// Skip, we don't want it.
+						continue;
+					}
+					if ( code->Name.starts_with( txt("AST_KIND"))) {
+						// Skip the next 3 definitions
+						++ code;
+						++ code;
+						continue;
+					}
+					body.append(code);
+				continue;
+
+				case ECode::Untyped:
+					if (code->Content.starts_with(txt("AST_KINDS")))
+				break;
+
+				case ECode::Enum:
+				{
+					if (code->Name.starts_with( txt("AstKind")))
+					{
+						// Swap with generated variant
+						CodeBody swap_body = def_body( ECode::Enum_Body );
+						{
+							swap_body.append( code_str(Ast_Invalid,));
+							for (Odin_AstKind& kind : ast_kinds)
+								swap_body.append( untyped_str( String::fmt_buf(GlobalAllocator, "Ast_%S,", kind.def->Name )));
+							swap_body.append( code_str(Ast_COUNT));
+						}
+						CodeEnum swapped_enum = code.cast<CodeEnum>().duplicate();
+						swapped_enum->Body = swap_body;
+						body.append(swapped_enum);
+					}
+					else
+						body.append(code);
+				}
+				continue;
+
+				case ECode::Variable:
+				{
+					if (code->Name.starts_with(txt("ast_strings")))
+					{
+						// Swap with generated table
+						String generated_table = String::make_reserve(GlobalAllocator, kilobytes(32));
+						{
+							for (Odin_AstKind& kind : ast_kinds)
+								generated_table.append(token_fmt("desc", (StrC)kind.desc, stringize(
+									{ cast(u8 *) <desc>, gb_size_of(<desc>) -1 },
+								)));
+						}
+						CodeVar swapped_table = code.cast<CodeVar>().duplicate();
+						swapped_table->Value = code_fmt( "kinds", (StrC)generated_table, stringize(
+						{
+							{cast(u8 *)"invalid node", gb_size_of("invalid node")},\n
+							<kinds>
+						}));
+						body.append(swapped_table);
+						body.append(fmt_newline);
+
+						// Right after is where the struct definitions were defined, we'll insert them here
+						body.append(def_pragma(txt("region AST_KINDS")));
+						body.append(fmt_newline);
+						for (Odin_AstKind& kind : ast_kinds)
+						{
+							Code def = kind.def.duplicate();
+							def->Name = get_cached_string( String::fmt_buf(GlobalAllocator, "Ast%S", kind.def->Name));
+							body.append( def );
+							body.append(fmt_newline);
+						}
+						body.append(def_pragma(txt("endregion AST_KINDS")));
+						continue;
+					}
+					if (code->Name.starts_with(txt("ast_variant_sizes")))
+					{
+						// Swap with generated table
+						String generated_table = String::make_reserve(GlobalAllocator, kilobytes(32));
+						{
+							for (Odin_AstKind& kind : ast_kinds)
+								generated_table.append(token_fmt( "name", (StrC)kind.def->Name, stringize(
+									gb_size_of(Ast<name>),\n
+								)));
+						}
+						CodeVar swapped_table = code.cast<CodeVar>().duplicate();
+						swapped_table->Value = code_fmt( "kinds", (StrC)generated_table, stringize(
+						{
+							0,\n
+							<kinds>
+						}));
+						body.append(swapped_table);
+						continue;
+					}
+					body.append(code);
+				}
+				continue;
+
+				case ECode::Struct:
+				{
+					CodeStruct code_struct = code.cast<CodeStruct>();
+					if (code->Name.starts_with(txt("Ast")))
+						for (Code ast_code : code_struct->Body) switch (ast_code->Type) 
+						{
+							case ECode::Union:
+								// Swap out the union's contents with the generated member definitions
+								CodeBody body_swap = def_body(ECode::Union_Body);
+								for (Odin_AstKind kind : ast_kinds)
+									body_swap.append( parse_variable( token_fmt( "name", (StrC)kind.def->Name, stringize(
+										Ast<name> <name>;
+									))));
+								ast_code->Body = rcast(AST*, body_swap.ast);
+							break;
+							default:
+								continue;
+						}
+					body.append(code);
+				}
+				continue;
+
+				default:
+					body.append(code);
+				continue;
+			}
+		}
+
+		Builder header = Builder::open( path_src "parser.hpp" );
+		header.print(body);
+		header.write();
+		format_file( path_src "parser.hpp" );
+	}
+
+	// Remove TYPE_KINDS usage in types.cpp
+	if (0)
+	{
+
+	}
 
 	// gen::deinit();
 	return 0;

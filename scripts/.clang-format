@@ -71,7 +71,7 @@ BreakAfterAttributes: Always
 BreakArrays: true
 BreakBeforeInlineASMColon: OnlyMultiline
 BreakBeforeBinaryOperators: NonAssignment
-BreakBeforeBraces: Allman
+BreakBeforeBraces: Attach
 BreakBeforeInheritanceComma: true
 BreakInheritanceList: BeforeComma
 BreakBeforeConceptDeclarations: true
@@ -119,11 +119,11 @@ MaxEmptyLinesToKeep: 4
 
 NamespaceIndentation: All
 
-PointerAlignment: Left
+PointerAlignment: Right
 
-QualifierAlignment: Leave
+QualifierAlignment: Right
 
-ReferenceAlignment: Left
+ReferenceAlignment: Right
 
 ReflowComments: true
 
