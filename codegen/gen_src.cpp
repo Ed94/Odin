@@ -1,3 +1,5 @@
+#pragma clang diagnostic ignored "-Wswitch"
+
 #define GEN_DEFINE_LIBRARY_CODE_CONSTANTS
 #define GEN_ENFORCE_STRING_CODE_TYPES
 #define GEN_EXPOSE_BACKEND
@@ -246,9 +248,10 @@ int gen_main()
 				{
 					CodeStruct code_struct = code.cast<CodeStruct>();
 					if (code->Name.starts_with(txt("Ast")))
-						for (Code ast_code : code_struct->Body) switch (ast_code->Type) 
+						for (Code ast_code : code_struct->Body) switch (ast_code->Type)
 						{
 							case ECode::Union:
+							{
 								// Swap out the union's contents with the generated member definitions
 								CodeBody body_swap = def_body(ECode::Union_Body);
 								for (Odin_AstKind kind : ast_kinds)
@@ -256,6 +259,7 @@ int gen_main()
 										Ast<name> <name>;
 									))));
 								ast_code->Body = rcast(AST*, body_swap.ast);
+							}
 							break;
 							default:
 								continue;
