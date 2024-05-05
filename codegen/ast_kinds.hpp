@@ -1,5 +1,5 @@
 /*
-Ast_KINDS swap content
+AST_KINDS swap content
 These are not to be used directly. They are parsed by gen_src.cpp
 
 Everything within the Ast_Kinds region has a specific format pair:

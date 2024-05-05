@@ -125,6 +125,33 @@ Array<Odin_AstKind> get_odin_ast_kinds()
 	return kinds;
 }
 
+Array<Code> get_odin_type_kinds()
+{
+	local_persist Array<Code> types = Array<Code>::init_reserve(GlobalAllocator, kilobytes(64));
+	{
+		local_persist s32 done_once = 0;
+		if (done_once)
+			return types;
+		++ done_once;
+	}
+
+	CodeBody ast_types_header = parse_file( path_codegen "type_kinds.hpp" );
+	for ( Code code = ast_types_header.begin(); code != ast_types_header.end(); ++ code ) switch (code->Type)
+	{
+		case ECode::Comment:
+		case ECode::Preprocess_Pragma:
+			// Ignore
+		continue;
+
+		case ECode::Typedef:
+		case ECode::Struct:
+		{
+			types.append(code);
+		}
+	}
+	return types;
+}
+
 int gen_main()
 {
 	gen::init();
@@ -134,6 +161,7 @@ int gen_main()
 	PreprocessorDefines.append( get_cached_string(str_GB_STATIC_ASSERT) );
 
 	// Remove TOKEN_KINDS usage in tokenizer.cpp
+	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
 	if (1)
 	{
 		CSV_Object csv_nodes;
@@ -203,9 +231,9 @@ int gen_main()
 			continue;
 		}
 
-		Builder header = Builder::open( path_src "tokenizer.cpp" );
-		header.print(body);
-		header.write();
+		Builder src = Builder::open( path_src "tokenizer.cpp" );
+		src.print(body);
+		src.write();
 		format_file( path_src "tokenizer.cpp" );
 	}
 
@@ -241,7 +269,10 @@ int gen_main()
 
 				case ECode::Untyped:
 					if (code->Content.starts_with(txt("AST_KINDS")))
-				break;
+						continue;
+
+					body.append(code);
+				continue;
 
 				case ECode::Enum:
 				{
@@ -358,9 +389,127 @@ int gen_main()
 	}
 
 	// Remove TYPE_KINDS usage in types.cpp
-	if (0)
+	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
+	if (1)
 	{
+		CodeBody src_types_cpp = parse_file( path_src "types.cpp" );
+		CodeBody body = def_body( ECode::Global_Body );
 
+		body.append( def_comment(txt("NOTICE(github: Ed94): This is a generated variant of types.cpp using <repo_root>/codegen/gen_src.cpp")));
+		body.append(fmt_newline);
+
+		Array<Code> type_kinds = get_odin_type_kinds();
+
+		for (Code code = src_types_cpp.begin(); code != src_types_cpp.end(); ++ code) switch (code->Type)
+		{
+			case ECode::Preprocess_Define:
+			{
+				if ( code->Name.starts_with( txt("TYPE_KINDS"))) {
+					// Skip, we don't want it.
+					continue;
+				}
+				if ( code->Name.starts_with( txt("TYPE_KIND"))) {
+					// Skip the next 3 definitions
+					++ code;
+					++ code;
+					continue;
+				}
+				body.append(code);
+			}
+			continue;
+
+			case ECode::Enum:
+			{
+				if ( code->Name.starts_with( txt("TypeKind")))
+				{
+					CodeBody swap_body = def_body( ECode::Enum_Body);
+					{
+						swap_body.append( code_str(Type_Invalid, ));
+						{
+							for (Code type : type_kinds)
+									swap_body.append( untyped_str( String::fmt_buf(GlobalAllocator, "Type_%S,", type->Name )));
+							swap_body.append( code_str(Type_COUNT));
+						}
+						CodeEnum swapped_enum = code.cast<CodeEnum>().duplicate();
+						swapped_enum->Body = swap_body;
+						body.append(swapped_enum);
+					}
+				}
+				else
+					body.append(code);
+			}
+			continue;
+
+			case ECode::Variable:
+			{
+				if (code->Name.starts_with(txt("type_strings")))
+				{
+					// Swap with generated table
+					String generated_table = String::make_reserve(GlobalAllocator, kilobytes(32));
+					{
+						for (Code type : type_kinds)
+							generated_table.append(token_fmt("type", (StrC)type->Name, stringize(
+								{ cast(u8 *) "<type>", gb_size_of("<type>") -1 },
+							)));
+					}
+					CodeVar swapped_table = code.cast<CodeVar>().duplicate();
+					swapped_table->Value = code_fmt( "types", (StrC)generated_table, stringize(
+					{
+						{cast(u8 *)"invalid node", gb_size_of("invalid node")},\n
+						<types>
+					}));
+					body.append(swapped_table);
+					body.append(fmt_newline);
+					// Right after is where the struct definitions were defined, we'll insert them here
+					body.append(def_pragma(txt("region TYPE_KINDS")));
+					body.append(fmt_newline);
+					for (Code type : type_kinds)
+					{
+						Code def = type.duplicate();
+						def->Name = get_cached_string( String::fmt_buf(GlobalAllocator, "Type%S", type->Name));
+						body.append( def );
+						body.append(fmt_newline);
+					}
+					body.append(def_pragma(txt("endregion TYPE_KINDS")));
+					continue;
+				}
+				body.append(code);
+			}
+			continue;
+
+			case ECode::Struct:
+			{
+				CodeStruct code_struct = code.cast<CodeStruct>();
+				if ( String::are_equal(code->Name, txt("Type")))
+					for (Code type_code : code_struct->Body) switch (type_code->Type)
+					{
+						case ECode::Union:
+						{
+							// Swap out the union's contents with the generated member definitions
+							CodeBody body_swap = def_body(ECode::Union_Body);
+							for (Code type : type_kinds)
+								body_swap.append( parse_variable( token_fmt( "name", (StrC)type->Name, stringize(
+									Type<name> <name>;
+								))));
+							type_code->Body = rcast(AST*, body_swap.ast);
+						}
+						break;
+						default:
+							continue;
+					}
+				body.append(code);
+			}
+			continue;
+
+			default:
+				body.append(code);
+			continue;
+		}
+
+		Builder src = Builder::open( path_src "types.cpp" );
+		src.print(body);
+		src.write();
+		format_file( path_src "types.cpp" );
 	}
 
 	// gen::deinit();

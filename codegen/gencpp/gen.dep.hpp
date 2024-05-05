@@ -2155,7 +2155,7 @@ struct String
 
 	static bool are_equal( String lhs, StrC rhs )
 	{
-		if ( lhs.length() != (rhs.Len - 1) )
+		if ( lhs.length() != (rhs.Len) )
 			return false;
 
 		for ( sw idx = 0; idx < lhs.length(); ++idx )
