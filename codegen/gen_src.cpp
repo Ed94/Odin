@@ -460,6 +460,7 @@ int gen_main()
 					}));
 					body.append(swapped_table);
 					body.append(fmt_newline);
+
 					// Right after is where the struct definitions were defined, we'll insert them here
 					body.append(def_pragma(txt("region TYPE_KINDS")));
 					body.append(fmt_newline);

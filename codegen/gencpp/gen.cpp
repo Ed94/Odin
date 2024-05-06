@@ -1522,12 +1522,6 @@ void CodeBody::to_string( String& result )
 	while ( left-- )
 	{
 		result.append_fmt( "%S", curr.to_string() );
-
-		if (left > 1) switch (ast->Type)
-		{
-			case ECode::Enum_Body:
-				result.append("\n");
-		}
 		++curr;
 	}
 }
@@ -10706,8 +10700,13 @@ namespace parser
 							// <Name> = <Expression> <Macro>,
 						}
 
-						entry.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)entry.Text;
+						// Consume inline comments
+						if ( currtok.Type == TokType::Comment && prevtok.Line == currtok.Line )
+						{
+							eat( TokType::Comment );
+						}
 
+						entry.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)entry.Text;
 						member       = untyped_str( entry );
 						break;
 				}

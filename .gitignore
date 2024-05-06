@@ -325,3 +325,4 @@ build.sh
 *.raddbg
 
 misc/featuregen/featuregen
+codegen/build/gen_src.map
