@@ -7372,6 +7372,8 @@ gb_internal ExprKind check_call_expr(CheckerContext *c, Operand *operand, Ast *c
 		    name == "location" || 
 		    name == "assert" || 
 		    name == "panic" || 
+			name == "region" ||
+			name == "endregion" ||
 		    name == "defined" || 
 		    name == "config" || 
 		    name == "load" ||

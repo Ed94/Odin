@@ -1670,7 +1670,21 @@ gb_internal bool check_builtin_procedure_directive(CheckerContext *c, Operand *o
 				operand->value = found->Constant.value;
 			}
 		}
-	} else {
+	}
+
+	// Bodging in #region & #endregion support
+	else if (name == "region") {
+		operand->type = t_untyped_bool;
+		operand->mode = Addressing_Constant;
+		operand->value = exact_value_bool(true);
+	}
+	else if (name == "endregion") {
+		operand->type = t_untyped_bool;
+		operand->mode = Addressing_Constant;
+		operand->value = exact_value_bool(true);
+	}
+
+	else {
 		error(call, "Unknown directive call: #%.*s", LIT(name));
 	}
 	return true;
