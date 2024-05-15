@@ -1801,8 +1801,6 @@ struct Array
 	}
 };
 
-// TODO(Ed) : This thing needs ALOT of work.
-
 template<typename Type>
 struct HashTable
 {
