@@ -31,6 +31,17 @@ CodeBody parse_file( char const* path ) {
 }
 
 inline
+void git_restore_file( char const* path )
+{
+	#define git_restore "git restore "
+	String command = String::make( GlobalAllocator, git_restore );
+	command.append( path );
+		log_fmt("Running git restore on: %s\n", path);
+		system(command);
+	#undef  git_restore
+}
+
+inline
 void format_file( char const* path )
 {
 	// Need to execute clang format on the generated file to get it to match the original.
@@ -43,7 +54,7 @@ void format_file( char const* path )
 	command.append( cf_style );
 	command.append( cf_verbose );
 	command.append( path );
-		log_fmt("\tRunning clang-format on file:\n");
+		log_fmt("\tRunning clang-format on file: %s\n", path);
 		system( command );
 		log_fmt("\tclang-format finished reformatting.\n");
 	#undef cf_cmd
@@ -191,6 +202,8 @@ int gen_main()
 		}
 		to_str_entries.append(txt("}"));
 
+		char const* path_tokenizer = path_src "tokenizer.cpp";
+		git_restore_file( path_tokenizer );
 		CodeBody src_tokenizer_cpp = parse_file( path_src "tokenizer.cpp" );
 		CodeBody body = def_body( ECode::Global_Body );
 
@@ -241,6 +254,8 @@ int gen_main()
 	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
 	if (1)
 	{
+		char const* path_parser = path_src "parser.cpp";
+		git_restore_file( path_parser );
 		CodeBody src_parser_header = parse_file( path_src "parser.hpp" );
 		CodeBody body = def_body( ECode::Global_Body );
 
@@ -392,6 +407,8 @@ int gen_main()
 	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
 	if (1)
 	{
+		char const* path_types = path_src "types.cpp";
+		git_restore_file( path_types );
 		CodeBody src_types_cpp = parse_file( path_src "types.cpp" );
 		CodeBody body = def_body( ECode::Global_Body );
 
