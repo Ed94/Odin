@@ -12,6 +12,7 @@ using namespace gen;
 
 #ifdef GEN_SYSTEM_WINDOWS
 	#include <process.h>
+	// #include <Windows.h>
 #endif
 
 #pragma region Directories
@@ -33,12 +34,13 @@ CodeBody parse_file( char const* path ) {
 inline
 void git_restore_file( char const* path )
 {
-	#define git_restore "git restore "
-	String command = String::make( GlobalAllocator, git_restore );
+	#define git_restore_cmd "git restore "
+	String command = String::make( GlobalAllocator, git_restore_cmd );
 	command.append( path );
-		log_fmt("Running git restore on: %s\n", path);
+		log_fmt("Running git restore on: %s", path);
 		system(command);
-	#undef  git_restore
+	#undef git_restore_cmd
+	Sleep(5);
 }
 
 inline
@@ -254,7 +256,7 @@ int gen_main()
 	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
 	if (1)
 	{
-		char const* path_parser = path_src "parser.cpp";
+		char const* path_parser = path_src "parser.hpp";
 		git_restore_file( path_parser );
 		CodeBody src_parser_header = parse_file( path_src "parser.hpp" );
 		CodeBody body = def_body( ECode::Global_Body );
