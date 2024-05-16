@@ -5434,13 +5434,13 @@ gb_internal void parser_add_foreign_file_to_process(Parser *p, AstPackage *pkg, 
 }
 
 gb_internal ReadDirectoryError read_directory_recursive(String path, Array<FileInfo> *fi, String const &FILE_EXT) {
-    Array<FileInfo> sub_list = {};
-    ReadDirectoryError rd_err = read_directory(path, &sub_list);
-    defer(array_free(&sub_list));
+	Array<FileInfo> sub_list = {};
+	ReadDirectoryError rd_err = read_directory(path, &sub_list);
+	defer(array_free(&sub_list));
 
-    if (rd_err != ReadDirectory_None) {
-        return rd_err;
-    }
+	if (rd_err != ReadDirectory_None) {
+		return rd_err;
+	}
 
 	String const FILE_EXT_MONLITHIC = str_lit(".ODIN_MONOLITHIC_PACKAGE");
 
@@ -5449,25 +5449,23 @@ gb_internal ReadDirectoryError read_directory_recursive(String path, Array<FileI
 	if (ext == FILE_EXT_MONLITHIC) {
 		monolithic_specified = true;
 	}
-    for (FileInfo sub_fi : sub_list)
-	{
+	for (FileInfo sub_fi : sub_list) {
 		String ext = path_extension(sub_fi.name);
-		if (monolithic_specified && sub_fi.is_dir) {
-            rd_err = read_directory_recursive(sub_fi.fullpath, fi, FILE_EXT);
+		if (monolithic_specified && sub_fi.is_dir)
+		{
+			rd_err = read_directory_recursive(sub_fi.fullpath, fi, FILE_EXT);
 			if (rd_err != ReadDirectory_None) {
 				return rd_err;
 			}
-		}
-		else
-		{
-            if (ext != FILE_EXT_MONLITHIC && (ext == FILE_EXT || ext == ".S" || ext == ".s")) {
+		} else {
+			if (ext != FILE_EXT_MONLITHIC && (ext == FILE_EXT || ext == ".S" || ext == ".s")) {
 				if (fi->data == nullptr) {
 					array_init(fi, heap_allocator(), 0, 100);
 				}
-                array_add(fi, sub_fi);
-            }
-        }
-    }
+				array_add(fi, sub_fi);
+			}
+		}
+	}
 	return rd_err;
 }
 
