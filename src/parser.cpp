@@ -5433,7 +5433,7 @@ gb_internal void parser_add_foreign_file_to_process(Parser *p, AstPackage *pkg, 
 	thread_pool_add_task(foreign_file_worker_proc, wd);
 }
 
-gb_internal ReadDirectoryError read_directory_recursive(String path, Array<FileInfo> *fi, String const &FILE_EXT) {
+gb_internal ReadDirectoryError read_directory_recursive(String path, Array<FileInfo> *fi, String const &FILE_EXT, bool is_monolihtic = false) {
 	Array<FileInfo> sub_list = {};
 	ReadDirectoryError rd_err = read_directory(path, &sub_list);
 	defer(array_free(&sub_list));
@@ -5446,14 +5446,15 @@ gb_internal ReadDirectoryError read_directory_recursive(String path, Array<FileI
 
 	String ext = path_extension(sub_list[0].name);
 	bool monolithic_specified = false;
-	if (ext == FILE_EXT_MONLITHIC) {
+	if (is_monolihtic || ext == FILE_EXT_MONLITHIC) {
+		// ALl subdirectories for this package cannot have nested packages, they'll all be considered part of the same package
 		monolithic_specified = true;
 	}
 	for (FileInfo sub_fi : sub_list) {
 		String ext = path_extension(sub_fi.name);
 		if (monolithic_specified && sub_fi.is_dir)
 		{
-			rd_err = read_directory_recursive(sub_fi.fullpath, fi, FILE_EXT);
+			rd_err = read_directory_recursive(sub_fi.fullpath, fi, FILE_EXT, monolithic_specified);
 			if (rd_err != ReadDirectory_None) {
 				return rd_err;
 			}
