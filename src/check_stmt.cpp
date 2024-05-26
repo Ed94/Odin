@@ -565,7 +565,11 @@ gb_internal Type *check_assignment_variable(CheckerContext *ctx, Operand *lhs, O
 			} else {
 				error(lhs->expr, "Cannot assign to '%s' which is a procedure parameter", str);
 			}
-			error_line("\tSuggestion: Did you mean to pass '%.*s' by pointer?\n", LIT(e->token.string));
+			if (is_type_pointer(e->type)) {
+				error_line("\tSuggestion: Did you mean to shadow it? '%.*s := %.*s'?\n", LIT(e->token.string), LIT(e->token.string));
+			} else {
+				error_line("\tSuggestion: Did you mean to pass '%.*s' by pointer?\n", LIT(e->token.string));
+			}
 			show_error_on_line(e->token.pos, token_pos_end(e->token));
 		} else {
 			ERROR_BLOCK();
@@ -1663,6 +1667,7 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 					}
 				}
 			}
+			bool is_ptr = type_deref(operand.type);
 			Type *t = base_type(type_deref(operand.type));
 
 			switch (t->kind) {
@@ -1707,7 +1712,7 @@ gb_internal void check_range_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags)
 				break;
 
 			case Type_Array:
-				is_possibly_addressable = operand.mode == Addressing_Variable;
+				is_possibly_addressable = operand.mode == Addressing_Variable || is_ptr;
 				array_add(&vals, t->Array.elem);
 				array_add(&vals, t_int);
 				break;

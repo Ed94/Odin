@@ -1179,13 +1179,57 @@ gb_internal void check_assignment(CheckerContext *c, Operand *operand, Type *typ
 				      LIT(context_name));
 				check_assignment_error_suggestion(c, operand, type);
 
+				Type *src = base_type(operand->type);
+				Type *dst = base_type(type);
 				if (context_name == "procedure argument") {
-					Type *src = base_type(operand->type);
-					Type *dst = base_type(type);
 					if (is_type_slice(src) && are_types_identical(src->Slice.elem, dst)) {
 						gbString a = expr_to_string(operand->expr);
 						error_line("\tSuggestion: Did you mean to pass the slice into the variadic parameter with ..%s?\n\n", a);
 						gb_string_free(a);
+					}
+				}
+				if (src->kind == dst->kind && src->kind == Type_Proc) {
+					Type *x = src;
+					Type *y = dst;
+					bool same_inputs  = are_types_identical_internal(x->Proc.params,  y->Proc.params,  false);
+					bool same_outputs = are_types_identical_internal(x->Proc.results, y->Proc.results, false);
+					if (same_inputs && same_outputs &&
+					    x->Proc.calling_convention != y->Proc.calling_convention) {
+				    		gbString s_expected = type_to_string(y);
+				    		gbString s_got = type_to_string(x);
+
+						error_line("\tNote: The calling conventions differ between the procedure signature types\n");
+						error_line("\t      Expected \"%s\", got \"%s\"\n",
+						           proc_calling_convention_strings[y->Proc.calling_convention],
+						           proc_calling_convention_strings[x->Proc.calling_convention]);
+						error_line("\t      Expected: %s\n", s_expected);
+						error_line("\t      Got:      %s\n", s_got);
+						gb_string_free(s_got);
+						gb_string_free(s_expected);
+					} else if (same_inputs && !same_outputs) {
+						gbString s_expected = type_to_string(y->Proc.results);
+						gbString s_got = type_to_string(x->Proc.results);
+						error_line("\tNote: The return types differ between the procedure signature types\n");
+						error_line("\t      Expected: %s\n", s_expected);
+						error_line("\t      Got:      %s\n", s_got);
+						gb_string_free(s_got);
+						gb_string_free(s_expected);
+					} else if (!same_inputs && same_outputs) {
+						gbString s_expected = type_to_string(y->Proc.params);
+						gbString s_got = type_to_string(x->Proc.params);
+						error_line("\tNote: The input parameter types differ between the procedure signature types\n");
+						error_line("\t      Expected: %s\n", s_expected);
+						error_line("\t      Got:      %s\n", s_got);
+						gb_string_free(s_got);
+						gb_string_free(s_expected);
+					} else {
+						gbString s_expected = type_to_string(y);
+						gbString s_got = type_to_string(x);
+						error_line("\tNote: The signature type do not match whatsoever\n");
+						error_line("\t      Expected: %s\n", s_expected);
+						error_line("\t      Got:      %s\n", s_got);
+						gb_string_free(s_got);
+						gb_string_free(s_expected);
 					}
 				}
 			}
@@ -1761,7 +1805,7 @@ gb_internal Entity *check_ident(CheckerContext *c, Operand *o, Ast *n, Type *nam
 
 	case Entity_ImportName:
 		if (!allow_import_name) {
-			error(n, "Use of import '%.*s' not in selector", LIT(name));
+			error(n, "Use of import name '%.*s' not in the form of 'x.y'", LIT(name));
 		}
 		return e;
 	case Entity_LibraryName:
@@ -7757,13 +7801,18 @@ gb_internal bool check_set_index_data(Operand *o, Type *t, bool indirection, i64
 		return true;
 		
 	case Type_Matrix:
-		*max_count = t->Matrix.column_count;
 		if (indirection) {
 			o->mode = Addressing_Variable;
 		} else if (o->mode != Addressing_Variable) {
 			o->mode = Addressing_Value;
 		}
-		o->type = alloc_type_array(t->Matrix.elem, t->Matrix.row_count);
+		if (t->Matrix.is_row_major) {
+			*max_count = t->Matrix.row_count;
+			o->type = alloc_type_array(t->Matrix.elem, t->Matrix.column_count);
+		} else {
+			*max_count = t->Matrix.column_count;
+			o->type = alloc_type_array(t->Matrix.elem, t->Matrix.row_count);
+		}
 		return true;
 
 	case Type_Slice:
@@ -10159,7 +10208,7 @@ gb_internal ExprKind check_index_expr(CheckerContext *c, Operand *o, Ast *node, 
 			o->mode = Addressing_Invalid;
 			o->expr = node;
 			return kind;
-		} else if (ok) {
+		} else if (ok && !is_type_matrix(t)) {
 			ExactValue value = type_and_value_of_expr(ie->expr).value;
 			o->mode = Addressing_Constant;
 			bool success = false;
