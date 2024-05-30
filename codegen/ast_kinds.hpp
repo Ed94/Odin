@@ -457,7 +457,8 @@ struct ImportDecl {
 char const* desc_ForeignImportDecl = "foreign import declaration";
 struct ForeignImportDecl {
 	Token          token;
-	Slice<Token>   filepaths;
+	Slice<Ast *>   filepaths;
+	bool           multiple_filepaths;
 	Token          library_name;
 	String         collection_name;
 	Slice<String>  fullpaths;
