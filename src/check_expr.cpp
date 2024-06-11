@@ -578,6 +578,7 @@ gb_internal bool find_or_generate_polymorphic_procedure(CheckerContext *old_c, E
 	d->defer_use_checked = false;
 
 	Entity *entity = alloc_entity_procedure(nullptr, token, final_proc_type, tags);
+	entity->state.store(EntityState_Resolved);
 	entity->identifier = ident;
 
 	add_entity_and_decl_info(&nctx, ident, entity, d);
@@ -7674,7 +7675,7 @@ gb_internal ExprKind check_call_expr(CheckerContext *c, Operand *operand, Ast *c
 				if (decl->proc_lit) {
 					ast_node(pl, ProcLit, decl->proc_lit);
 					if (pl->inlining == ProcInlining_no_inline) {
-						error(call, "'#force_inline' cannot be applied to a procedure that has be marked as '#force_no_inline'");
+						error(call, "'#force_inline' cannot be applied to a procedure that has been marked as '#force_no_inline'");
 					}
 				}
 			}
