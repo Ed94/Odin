@@ -153,6 +153,7 @@ struct CallExpr {
 	bool          optional_ok_one;
 	bool          was_selector;
 	AstSplitArgs *split_args;
+	Entity       *entity_procedure_of;
 };
 
 char const* desc_FieldValue = "field value";
