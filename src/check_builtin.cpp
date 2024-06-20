@@ -1756,9 +1756,21 @@ gb_internal bool check_builtin_procedure_directive(CheckerContext *c, Operand *o
 		operand->mode = Addressing_Constant;
 		operand->value = exact_value_bool(is_defined);
 
+		// If the arg is a selector expression we don't add it, `-define` only allows identifiers.
+		if (arg->kind == Ast_Ident) {
+			Defineable defineable    = {};
+			defineable.docs          = nullptr;
+			defineable.name          = arg->Ident.token.string;
+			defineable.default_value = exact_value_bool(false);
+			defineable.pos           = arg->Ident.token.pos;
+
+			MUTEX_GUARD(&c->info->defineables_mutex);
+			array_add(&c->info->defineables, defineable);
+		}
+
 	} else if (name == "config") {
 		if (ce->args.count != 2) {
-			error(call, "'#config' expects 2 argument, got %td", ce->args.count);
+			error(call, "'#config' expects 2 arguments, got %td", ce->args.count);
 			return false;
 		}
 		Ast *arg = unparen_expr(ce->args[0]);
@@ -1793,8 +1805,22 @@ gb_internal bool check_builtin_procedure_directive(CheckerContext *c, Operand *o
 				operand->value = found->Constant.value;
 			}
 		}
-	}
+	
+		Defineable defineable    = {};
+		defineable.docs          = nullptr;
+		defineable.name          = name;
+		defineable.default_value = def.value;
+		defineable.pos           = arg->Ident.token.pos;
 
+		if (c->decl) {
+			defineable.docs = c->decl->docs;
+		}
+
+		MUTEX_GUARD(&c->info->defineables_mutex);
+		array_add(&c->info->defineables, defineable);
+
+	} 
+	
 	// Bodging in #region & #endregion support
 	else if (name == "region") {
 		operand->type = t_untyped_bool;
@@ -1806,7 +1832,7 @@ gb_internal bool check_builtin_procedure_directive(CheckerContext *c, Operand *o
 		operand->mode = Addressing_Constant;
 		operand->value = exact_value_bool(true);
 	}
-
+	
 	else {
 		error(call, "Unknown directive call: #%.*s", LIT(name));
 	}
@@ -5103,15 +5129,9 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 			isize max_arg_count = 32;
 			
 			switch (build_context.metrics.os) {
-			case TargetOs_windows:
-			case TargetOs_freestanding:
-				error(call, "'%.*s' is not supported on this platform (%.*s)", LIT(builtin_name), LIT(target_os_names[build_context.metrics.os]));
-				break;
 			case TargetOs_darwin:
 			case TargetOs_linux:
 			case TargetOs_essence:
-			case TargetOs_freebsd:
-			case TargetOs_openbsd:
 			case TargetOs_haiku:
 				switch (build_context.metrics.arch) {
 				case TargetArch_i386:
@@ -5120,6 +5140,9 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 					max_arg_count = 7;
 					break;
 				}
+				break;
+			default:
+				error(call, "'%.*s' is not supported on this platform (%.*s)", LIT(builtin_name), LIT(target_os_names[build_context.metrics.os]));
 				break;
 			}
 			
@@ -5131,6 +5154,55 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 			
 			operand->mode = Addressing_Value;
 			operand->type = t_uintptr;
+			return true;
+		}
+		break;
+	case BuiltinProc_syscall_bsd:
+		{
+			convert_to_typed(c, operand, t_uintptr);
+			if (!is_type_uintptr(operand->type)) {
+				gbString t = type_to_string(operand->type);
+				error(operand->expr, "Argument 0 must be of type 'uintptr', got %s", t);
+				gb_string_free(t);
+			}
+			for (isize i = 1; i < ce->args.count; i++) {
+				Operand x = {};
+				check_expr(c, &x, ce->args[i]);
+				if (x.mode != Addressing_Invalid) {
+					convert_to_typed(c, &x, t_uintptr);	
+				}
+				convert_to_typed(c, &x, t_uintptr);
+				if (!is_type_uintptr(x.type)) {
+					gbString t = type_to_string(x.type);
+					error(x.expr, "Argument %td must be of type 'uintptr', got %s", i, t);
+					gb_string_free(t);
+				}
+			}
+			
+			isize max_arg_count = 32;
+			
+			switch (build_context.metrics.os) {
+			case TargetOs_freebsd:
+			case TargetOs_netbsd:
+			case TargetOs_openbsd:
+				switch (build_context.metrics.arch) {
+				case TargetArch_amd64:
+				case TargetArch_arm64:
+					max_arg_count = 7;
+					break;
+				}
+				break;
+			default:
+				error(call, "'%.*s' is not supported on this platform (%.*s)", LIT(builtin_name), LIT(target_os_names[build_context.metrics.os]));
+				break;
+			}
+			
+			if (ce->args.count > max_arg_count) {
+				error(ast_end_token(call), "'%.*s' has a maximum of %td arguments on this platform (%.*s), got %td", LIT(builtin_name), max_arg_count, LIT(target_os_names[build_context.metrics.os]), ce->args.count);
+			}
+			
+			operand->mode = Addressing_Value;
+			operand->type = make_optional_ok_type(t_uintptr);
 			return true;
 		}
 		break;

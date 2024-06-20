@@ -2606,6 +2606,11 @@ gb_internal void check_unary_expr(CheckerContext *c, Operand *o, Token op, Ast *
 	if (o->mode == Addressing_Constant) {
 		Type *type = base_type(o->type);
 		if (!is_type_constant_type(o->type)) {
+			if (is_type_array_like(o->type)) {
+				o->mode = Addressing_Value;
+				return;
+			}
+
 			gbString xt = type_to_string(o->type);
 			gbString err_str = expr_to_string(node);
 			error(op, "Invalid type, '%s', for constant unary expression '%s'", xt, err_str);
@@ -8324,6 +8329,14 @@ gb_internal ExprKind check_basic_directive_expr(CheckerContext *c, Operand *o, A
 		}
 		o->type = t_untyped_string;
 		o->value = exact_value_string(file);
+	} else if (name == "directory") {
+		String file = get_file_path_string(bd->token.pos.file_id);
+		String path = dir_from_path(file);
+		if (build_context.obfuscate_source_code_locations) {
+			path = obfuscate_string(path, "D");
+		}
+		o->type = t_untyped_string;
+		o->value = exact_value_string(path);
 	} else if (name == "line") {
 		i32 line = bd->token.pos.line;
 		if (build_context.obfuscate_source_code_locations) {
@@ -9821,7 +9834,9 @@ gb_internal ExprKind check_compound_literal(CheckerContext *c, Operand *o, Ast *
 				if (tav.mode != Addressing_Constant) {
 					continue;
 				}
-				GB_ASSERT(tav.value.kind == ExactValue_Integer);
+				if (tav.value.kind != ExactValue_Integer) {
+					continue;
+				}
 				i64 v = big_int_to_i64(&tav.value.value_integer);
 				i64 lower = bt->BitSet.lower;
 				u64 index = cast(u64)(v-lower);
