@@ -300,7 +300,10 @@ enum BuildFlagKind {
 	BuildFlag_VetUsingParam,
 	BuildFlag_VetStyle,
 	BuildFlag_VetSemicolon,
+	BuildFlag_VetCast,
+	BuildFlag_VetTabs,
 
+	BuildFlag_CustomAttribute,
 	BuildFlag_IgnoreUnknownAttributes,
 	BuildFlag_ExtraLinkerFlags,
 	BuildFlag_ExtraAssemblerFlags,
@@ -343,6 +346,7 @@ enum BuildFlagKind {
 	// internal use only
 	BuildFlag_InternalIgnoreLazy,
 	BuildFlag_InternalIgnoreLLVMBuild,
+	BuildFlag_InternalIgnorePanic,
 
 	BuildFlag_Tilde,
 
@@ -498,7 +502,10 @@ gb_internal bool parse_build_flags(Array<String> args) {
 	add_flag(&build_flags, BuildFlag_VetUsingParam,           str_lit("vet-using-param"),           BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_VetStyle,                str_lit("vet-style"),                 BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_VetSemicolon,            str_lit("vet-semicolon"),             BuildFlagParam_None,    Command__does_check);
+	add_flag(&build_flags, BuildFlag_VetCast,                 str_lit("vet-cast"),                  BuildFlagParam_None,    Command__does_check);
+	add_flag(&build_flags, BuildFlag_VetTabs,                 str_lit("vet-tabs"),                  BuildFlagParam_None,    Command__does_check);
 
+	add_flag(&build_flags, BuildFlag_CustomAttribute,         str_lit("custom-attribute"),          BuildFlagParam_String,  Command__does_check, true);
 	add_flag(&build_flags, BuildFlag_IgnoreUnknownAttributes, str_lit("ignore-unknown-attributes"), BuildFlagParam_None,    Command__does_check);
 	add_flag(&build_flags, BuildFlag_ExtraLinkerFlags,        str_lit("extra-linker-flags"),        BuildFlagParam_String,  Command__does_build);
 	add_flag(&build_flags, BuildFlag_ExtraAssemblerFlags,     str_lit("extra-assembler-flags"),     BuildFlagParam_String,  Command__does_build);
@@ -539,6 +546,7 @@ gb_internal bool parse_build_flags(Array<String> args) {
 
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLazy,      str_lit("internal-ignore-lazy"),      BuildFlagParam_None,    Command_all);
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLLVMBuild, str_lit("internal-ignore-llvm-build"),BuildFlagParam_None,    Command_all);
+	add_flag(&build_flags, BuildFlag_InternalIgnorePanic,    str_lit("internal-ignore-panic"),     BuildFlagParam_None,    Command_all);
 
 #if ALLOW_TILDE
 	add_flag(&build_flags, BuildFlag_Tilde,                   str_lit("tilde"),                     BuildFlagParam_None,    Command__does_build);
@@ -1150,6 +1158,31 @@ gb_internal bool parse_build_flags(Array<String> args) {
 						case BuildFlag_VetUsingParam:      build_context.vet_flags |= VetFlag_UsingParam;      break;
 						case BuildFlag_VetStyle:           build_context.vet_flags |= VetFlag_Style;           break;
 						case BuildFlag_VetSemicolon:       build_context.vet_flags |= VetFlag_Semicolon;       break;
+						case BuildFlag_VetCast:            build_context.vet_flags |= VetFlag_Cast;            break;
+						case BuildFlag_VetTabs:            build_context.vet_flags |= VetFlag_Tabs;            break;
+
+						case BuildFlag_CustomAttribute:
+							{
+								GB_ASSERT(value.kind == ExactValue_String);
+								String val = value.value_string;
+								String_Iterator it = {val, 0};
+								for (;;) {
+									String attr = string_split_iterator(&it, ',');
+									if (attr.len == 0) {
+										break;
+									}
+
+									attr = string_trim_whitespace(attr);
+									if (!string_is_valid_identifier(attr)) {
+										gb_printf_err("-custom-attribute '%.*s' must be a valid identifier\n", LIT(attr));
+										bad_flags = true;
+										continue;
+									}
+
+									string_set_add(&build_context.custom_attributes, attr);
+								}
+							}
+							break;
 
 						case BuildFlag_IgnoreUnknownAttributes:
 							build_context.ignore_unknown_attributes = true;
@@ -1323,6 +1356,9 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							break;
 						case BuildFlag_InternalIgnoreLLVMBuild:
 							build_context.ignore_llvm_build = true;
+							break;
+						case BuildFlag_InternalIgnorePanic:
+							build_context.ignore_panic = true;
 							break;
 						case BuildFlag_Tilde:
 							build_context.tilde_backend = true;
@@ -2218,9 +2254,26 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(1, "-vet-semicolon");
 		print_usage_line(2, "Errs on unneeded semicolons.");
 		print_usage_line(0, "");
+
+		print_usage_line(1, "-vet-cast");
+		print_usage_line(2, "Errs on casting a value to its own type or using `transmute` rather than `cast`.");
+		print_usage_line(0, "");
+
+		print_usage_line(1, "-vet-tabs");
+		print_usage_line(2, "Errs when the use of tabs has not been used for indentation.");
+		print_usage_line(0, "");
 	}
 
 	if (check) {
+		print_usage_line(1, "-custom-attribute:<string>");
+		print_usage_line(2, "Add a custom attribute which will be ignored if it is unknown.");
+		print_usage_line(2, "This can be used with metaprogramming tools.");
+		print_usage_line(2, "Examples:");
+		print_usage_line(3, "-custom-attribute:my_tag");
+		print_usage_line(3, "-custom-attribute:my_tag,the_other_thing");
+		print_usage_line(3, "-custom-attribute:my_tag -custom-attribute:the_other_thing");
+		print_usage_line(0, "");
+
 		print_usage_line(1, "-ignore-unknown-attributes");
 		print_usage_line(2, "Ignores unknown attributes.");
 		print_usage_line(2, "This can be used with metaprogramming tools.");
@@ -2303,9 +2356,13 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-strict-style");
+		print_usage_line(2, "This enforces parts of same style as the Odin compiler, prefer '-vet-style -vet-semicolon' if you do not want to match it exactly.");
+		print_usage_line(2, "");
 		print_usage_line(2, "Errs on unneeded tokens, such as unneeded semicolons.");
 		print_usage_line(2, "Errs on missing trailing commas followed by a newline.");
 		print_usage_line(2, "Errs on deprecated syntax.");
+		print_usage_line(2, "Errs when the attached-brace style in not adhered to (also known as 1TBS).");
+		print_usage_line(2, "Errs when 'case' labels are not in the same column as the associated 'switch' token.");
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-ignore-warnings");

@@ -555,7 +555,7 @@ open :: proc(path: string, flags: int = O_RDWR, mode: int = 0) -> (Handle, Errno
 		err := fchmod(handle, cast(u16)mode)
 		if err != 0 {
 			_unix_close(handle)
-			return INVALID_HANDLE, cast(Errno)err
+			return INVALID_HANDLE, err
 		}
 	}
 
@@ -883,8 +883,8 @@ absolute_path_from_relative :: proc(rel: string) -> (path: string, err: Errno) {
 	}
 	defer _unix_free(path_ptr)
 
-	path_cstr := transmute(cstring)path_ptr
-	path = strings.clone( string(path_cstr) )
+	path_cstr := cast(cstring)path_ptr
+	path = strings.clone(string(path_cstr))
 
 	return path, ERROR_NONE
 }
@@ -896,7 +896,7 @@ access :: proc(path: string, mask: int) -> bool {
 }
 
 flush :: proc(fd: Handle) -> Errno {
-    return cast(Errno)_unix_fsync(fd)
+	return cast(Errno)_unix_fsync(fd)
 }
 
 lookup_env :: proc(key: string, allocator := context.allocator) -> (value: string, found: bool) {

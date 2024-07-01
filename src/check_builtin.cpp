@@ -1726,11 +1726,13 @@ gb_internal bool check_builtin_procedure_directive(CheckerContext *c, Operand *o
 			gb_string_free(str);
 			return false;
 		}
-		error(call, "Compile time panic: %.*s", LIT(operand->value.value_string));
-		if (c->proc_name != "") {
-			gbString str = type_to_string(c->curr_proc_sig);
-			error_line("\tCalled within '%.*s' :: %s\n", LIT(c->proc_name), str);
-			gb_string_free(str);
+		if (!build_context.ignore_panic) {
+			error(call, "Compile time panic: %.*s", LIT(operand->value.value_string));
+			if (c->proc_name != "") {
+				gbString str = type_to_string(c->curr_proc_sig);
+				error_line("\tCalled within '%.*s' :: %s\n", LIT(c->proc_name), str);
+				gb_string_free(str);
+			}
 		}
 		operand->type = t_invalid;
 		operand->mode = Addressing_NoValue;
@@ -5850,6 +5852,31 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 		}
 		operand->mode = Addressing_Constant;
 		operand->type = t_untyped_integer;
+		break;
+	case BuiltinProc_type_struct_has_implicit_padding:
+		operand->value = exact_value_bool(false);
+		if (operand->mode != Addressing_Type) {
+			error(operand->expr, "Expected a struct type for '%.*s'", LIT(builtin_name));
+		} else if (!is_type_struct(operand->type) && !is_type_soa_struct(operand->type)) {
+			error(operand->expr, "Expected a struct type for '%.*s'", LIT(builtin_name));
+		} else {
+			Type *bt = base_type(operand->type);
+			if (bt->Struct.is_packed) {
+				operand->value = exact_value_bool(false);
+			} else if (bt->Struct.fields.count != 0) {
+				i64 size = type_size_of(bt);
+				Type *field_type = nullptr;
+				i64 last_offset = type_offset_of(bt, bt->Struct.fields.count-1, &field_type);
+				if (last_offset+type_size_of(field_type) < size) {
+					operand->value = exact_value_bool(true);
+				} else {
+					i64 packed_size = type_size_of_struct_pretend_is_packed(bt);
+					operand->value = exact_value_bool(packed_size < size);
+				}
+			}
+		}
+		operand->mode = Addressing_Constant;
+		operand->type = t_untyped_bool;
 		break;
 
 	case BuiltinProc_type_proc_parameter_count:

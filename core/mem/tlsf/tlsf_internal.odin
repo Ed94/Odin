@@ -214,7 +214,7 @@ block_next :: proc(block: ^Block_Header) -> (next: ^Block_Header) {
 block_link_next :: proc(block: ^Block_Header) -> (next: ^Block_Header) {
 	next = block_next(block)
 	next.prev_phys_block = block
- 	return
+	return
 }
 
 block_mark_as_free :: proc(block: ^Block_Header) {
@@ -630,7 +630,7 @@ alloc_bytes_non_zeroed :: proc(control: ^Allocator, size: uint, align: uint) -> 
 @(require_results)
 alloc_bytes :: proc(control: ^Allocator, size: uint, align: uint) -> (res: []byte, err: runtime.Allocator_Error) {
 	res, err = alloc_bytes_non_zeroed(control, size, align)
-	if err != nil {
+	if err == nil {
 		intrinsics.mem_zero(raw_data(res), len(res))
 	}
 	return
