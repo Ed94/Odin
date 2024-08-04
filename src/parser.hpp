@@ -74,7 +74,6 @@ enum AstFileFlag : u32 {
 	AstFile_IsPrivatePkg = 1<<0,
 	AstFile_IsPrivateFile = 1<<1,
 
-	AstFile_IsTest    = 1<<3,
 	AstFile_IsLazy    = 1<<4,
 
 	AstFile_NoInstrumentation = 1<<5,
@@ -140,6 +139,8 @@ struct AstFile {
 
 	// This is effectively a queue but does not require any multi-threading capabilities
 	Array<Ast *> delayed_decls_queues[AstDelayQueue_COUNT];
+
+	std::atomic<isize> seen_load_directive_count;
 
 #define PARSER_MAX_FIX_COUNT 6
 	isize    fix_count;
@@ -210,6 +211,8 @@ struct Parser {
 	std::atomic<isize>     file_to_process_count;
 	std::atomic<isize>     total_token_count;
 	std::atomic<isize>     total_line_count;
+
+	std::atomic<isize>     total_seen_load_directive_count;
 
 	// TODO(bill): What should this mutex be per?
 	//  * Parser
@@ -328,8 +331,10 @@ enum FieldFlag : u32 {
 	FieldFlag_by_ptr    = 1<<8,
 	FieldFlag_no_broadcast = 1<<9, // disallow array programming
 
+	FieldFlag_no_capture  = 1<<11,
+
 	// Internal use by the parser only
-	FieldFlag_Tags      = 1<<10,
+	FieldFlag_Tags      = 1<<15,
 	FieldFlag_Results   = 1<<16,
 
 
@@ -337,7 +342,10 @@ enum FieldFlag : u32 {
 	FieldFlag_Invalid   = 1u<<31,
 
 	// Parameter List Restrictions
-	FieldFlag_Signature = FieldFlag_ellipsis|FieldFlag_using|FieldFlag_no_alias|FieldFlag_c_vararg|FieldFlag_const|FieldFlag_any_int|FieldFlag_by_ptr|FieldFlag_no_broadcast,
+	FieldFlag_Signature = FieldFlag_ellipsis|FieldFlag_using|FieldFlag_no_alias|FieldFlag_c_vararg|
+	                      FieldFlag_const|FieldFlag_any_int|FieldFlag_by_ptr|FieldFlag_no_broadcast|
+	                      FieldFlag_no_capture,
+
 	FieldFlag_Struct    = FieldFlag_using|FieldFlag_subtype|FieldFlag_Tags,
 };
 
@@ -870,10 +878,8 @@ gb_internal gb_inline bool is_ast_when_stmt(Ast *node) {
 	return node->kind == Ast_WhenStmt;
 }
 
-gb_global gb_thread_local Arena global_thread_local_ast_arena = {};
-
 gb_internal gb_inline gbAllocator ast_allocator(AstFile *f) {
-	return arena_allocator(&global_thread_local_ast_arena);
+	return permanent_allocator();
 }
 
 gb_internal Ast *alloc_ast_node(AstFile *f, AstKind kind);

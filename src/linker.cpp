@@ -85,6 +85,20 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 			if (extra_linker_flags.len != 0) {
 				lib_str = gb_string_append_fmt(lib_str, " %.*s", LIT(extra_linker_flags));
 			}
+
+			for_array(i, e->LibraryName.paths) {
+				String lib = e->LibraryName.paths[i];
+
+				if (lib.len == 0) {
+					continue;
+				}
+
+				if (!string_ends_with(lib, str_lit(".o"))) {
+					continue;
+				}
+
+				inputs = gb_string_append_fmt(inputs, " \"%.*s\"", LIT(lib));
+			}
 		}
 
 		if (build_context.metrics.os == TargetOs_orca) {
@@ -208,7 +222,21 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 					if (has_asm_extension(lib)) {
 						if (!string_set_update(&asm_files, lib)) {
 							String asm_file = lib;
-							String obj_file = concatenate_strings(permanent_allocator(), asm_file, str_lit(".obj"));
+							String obj_file = {};
+							String temp_dir = temporary_directory(temporary_allocator());
+							if (temp_dir.len != 0) {
+								String filename = filename_without_directory(asm_file);
+
+								gbString str = gb_string_make(heap_allocator(), "");
+								str = gb_string_append_length(str, temp_dir.text, temp_dir.len);
+								str = gb_string_appendc(str, "/");
+								str = gb_string_append_length(str, filename.text, filename.len);
+								str = gb_string_append_fmt(str, "-%p.obj", asm_file.text);
+								obj_file = make_string_c(str);
+							} else {
+								obj_file = concatenate_strings(permanent_allocator(), asm_file, str_lit(".obj"));
+							}
+
 							String obj_format = str_lit("win64");
 						#if defined(GB_ARCH_32_BIT)
 							obj_format = str_lit("win32");
@@ -277,30 +305,30 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 			defer (gb_free(heap_allocator(), windows_sdk_bin_path.text));
 
 			if (!build_context.use_lld) { // msvc
-				String res_path = {};
+				String res_path = quote_path(heap_allocator(), build_context.build_paths[BuildPath_RES]);
+				String rc_path  = quote_path(heap_allocator(), build_context.build_paths[BuildPath_RC]);
 				defer (gb_free(heap_allocator(), res_path.text));
+				defer (gb_free(heap_allocator(), rc_path.text));
 
-				// TODO(Jeroen): Add ability to reuse .res file instead of recompiling, if `-resource:file.res` is given.
 				if (build_context.has_resource) {
-					String temp_res_path = path_to_string(heap_allocator(), build_context.build_paths[BuildPath_RES]);
-					res_path = concatenate3_strings(heap_allocator(), str_lit("\""), temp_res_path, str_lit("\""));
-					gb_free(heap_allocator(), temp_res_path.text);
+					if (build_context.build_paths[BuildPath_RC].basename == "")  {
+						debugf("Using precompiled resource %.*s\n", LIT(res_path));
+					} else {
+						debugf("Compiling resource %.*s\n", LIT(res_path));
 
-					String temp_rc_path  = path_to_string(heap_allocator(), build_context.build_paths[BuildPath_RC]);
-					String rc_path = concatenate3_strings(heap_allocator(), str_lit("\""), temp_rc_path, str_lit("\""));
-					gb_free(heap_allocator(), temp_rc_path.text);
-					defer (gb_free(heap_allocator(), rc_path.text));
+						result = system_exec_command_line_app("msvc-link",
+							"\"%.*src.exe\" /nologo /fo %.*s %.*s",
+							LIT(windows_sdk_bin_path),
+							LIT(res_path),
+							LIT(rc_path)
+						);
 
-					result = system_exec_command_line_app("msvc-link",
-						"\"%.*src.exe\" /nologo /fo %.*s %.*s",
-						LIT(windows_sdk_bin_path),
-						LIT(res_path),
-						LIT(rc_path)
-					);
-
-					if (result) {
-						return result;
+						if (result) {
+							return result;
+						}
 					}
+				} else {
+					res_path = {};
 				}
 
 				String linker_name = str_lit("link.exe");
@@ -399,7 +427,22 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 							continue; // already handled
 						}
 						String asm_file = lib;
-						String obj_file = concatenate_strings(permanent_allocator(), asm_file, str_lit(".o"));
+						String obj_file = {};
+
+						String temp_dir = temporary_directory(temporary_allocator());
+						if (temp_dir.len != 0) {
+							String filename = filename_without_directory(asm_file);
+
+							gbString str = gb_string_make(heap_allocator(), "");
+							str = gb_string_append_length(str, temp_dir.text, temp_dir.len);
+							str = gb_string_appendc(str, "/");
+							str = gb_string_append_length(str, filename.text, filename.len);
+							str = gb_string_append_fmt(str, "-%p.o", asm_file.text);
+							obj_file = make_string_c(str);
+						} else {
+							obj_file = concatenate_strings(permanent_allocator(), asm_file, str_lit(".o"));
+						}
+
 						String obj_format;
 					#if defined(GB_ARCH_64_BIT)
 						if (is_osx) {

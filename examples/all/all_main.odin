@@ -61,6 +61,7 @@ import cbor             "core:encoding/cbor"
 import csv              "core:encoding/csv"
 import endian           "core:encoding/endian"
 import hxa              "core:encoding/hxa"
+import ini              "core:encoding/ini"
 import json             "core:encoding/json"
 import varint           "core:encoding/varint"
 import xml              "core:encoding/xml"
@@ -114,6 +115,7 @@ import relative         "core:relative"
 import reflect          "core:reflect"
 import runtime          "base:runtime"
 import simd             "core:simd"
+import x86              "core:simd/x86"
 import slice            "core:slice"
 import slice_heap       "core:slice/heap"
 import sort             "core:sort"
@@ -192,6 +194,7 @@ _ :: base32
 _ :: base64
 _ :: csv
 _ :: hxa
+_ :: ini
 _ :: json
 _ :: varint
 _ :: xml
@@ -234,6 +237,7 @@ _ :: relative
 _ :: reflect
 _ :: runtime
 _ :: simd
+_ :: x86
 _ :: slice
 _ :: slice_heap
 _ :: sort

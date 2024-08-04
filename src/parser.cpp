@@ -112,17 +112,17 @@ gb_internal isize ast_node_size(AstKind kind) {
 
 }
 
-gb_global std::atomic<isize> global_total_node_memory_allocated;
+// gb_global std::atomic<isize> global_total_node_memory_allocated;
 
 // NOTE(bill): And this below is why is I/we need a new language! Discriminated unions are a pain in C/C++
 gb_internal Ast *alloc_ast_node(AstFile *f, AstKind kind) {
 	isize size = ast_node_size(kind);
 
-	Ast *node = cast(Ast *)arena_alloc(&global_thread_local_ast_arena, size, 16);
+	Ast *node = cast(Ast *)arena_alloc(get_arena(ThreadArena_Permanent), size, 16);
 	node->kind = kind;
 	node->file_id = f ? f->id : 0;
 
-	global_total_node_memory_allocated.fetch_add(size);
+	// global_total_node_memory_allocated.fetch_add(size);
 
 	return node;
 }
@@ -787,6 +787,9 @@ gb_internal Ast *ast_basic_directive(AstFile *f, Token token, Token name) {
 	Ast *result = alloc_ast_node(f, Ast_BasicDirective);
 	result->BasicDirective.token = token;
 	result->BasicDirective.name = name;
+	if (string_starts_with(name.string, str_lit("load"))) {
+		f->seen_load_directive_count++;
+	}
 	return result;
 }
 
@@ -3135,7 +3138,7 @@ gb_internal Ast *parse_call_expr(AstFile *f, Ast *operand) {
 	Ast *call = ast_call_expr(f, operand, args, open_paren, close_paren, ellipsis);
 
 	Ast *o = unparen_expr(operand);
-	if (o->kind == Ast_SelectorExpr && o->SelectorExpr.token.kind == Token_ArrowRight) {
+	if (o && o->kind == Ast_SelectorExpr && o->SelectorExpr.token.kind == Token_ArrowRight) {
 		return ast_selector_call_expr(f, o->SelectorExpr.token, o, call);
 	}
 
@@ -4011,6 +4014,7 @@ struct ParseFieldPrefixMapping {
 gb_global ParseFieldPrefixMapping const parse_field_prefix_mappings[] = {
 	{str_lit("using"),        Token_using,     FieldFlag_using},
 	{str_lit("no_alias"),     Token_Hash,      FieldFlag_no_alias},
+	{str_lit("no_capture"),   Token_Hash,      FieldFlag_no_capture},
 	{str_lit("c_vararg"),     Token_Hash,      FieldFlag_c_vararg},
 	{str_lit("const"),        Token_Hash,      FieldFlag_const},
 	{str_lit("any_int"),      Token_Hash,      FieldFlag_any_int},
@@ -5254,6 +5258,38 @@ gb_internal Ast *parse_stmt(AstFile *f) {
 		} else if (tag == "include") {
 			syntax_error(token, "#include is not a valid import declaration kind. Did you mean 'import'?");
 			s = ast_bad_stmt(f, token, f->curr_token);
+		} else if (tag == "define") {
+			s = ast_bad_stmt(f, token, f->curr_token);
+
+			if (name.pos.line == f->curr_token.pos.line) {
+				bool call_like = false;
+				Ast *macro_expr = nullptr;
+				Token ident = f->curr_token;
+				if (allow_token(f, Token_Ident) &&
+				    name.pos.line == f->curr_token.pos.line) {
+					if (f->curr_token.kind == Token_OpenParen && f->curr_token.pos.column == ident.pos.column+ident.string.len) {
+						call_like = true;
+						(void)parse_call_expr(f, nullptr);
+					}
+
+					if (name.pos.line == f->curr_token.pos.line && f->curr_token.kind != Token_Semicolon) {
+						macro_expr = parse_expr(f, false);
+					}
+				}
+
+				ERROR_BLOCK();
+				syntax_error(ident, "#define is not a valid declaration, Odin does not have a C-like preprocessor.");
+				if (macro_expr == nullptr || call_like) {
+					error_line("\tNote: Odin does not support macros\n");
+				} else {
+					gbString s = expr_to_string(macro_expr);
+					error_line("\tSuggestion: Did you mean '%.*s :: %s'?\n", LIT(ident.string), s);
+					gb_string_free(s);
+				}
+			} else {
+				syntax_error(token, "#define is not a valid declaration, Odin does not have a C-like preprocessor.");
+			}
+
 		} else {
 			syntax_error(token, "Unknown tag directive used: '%.*s'", LIT(tag));
 			s = ast_bad_stmt(f, token, f->curr_token);
@@ -5377,7 +5413,7 @@ gb_internal ParseFileError init_ast_file(AstFile *f, String const &fullpath, Tok
 	if (!string_ends_with(f->fullpath, str_lit(".odin"))) {
 		return ParseFile_WrongExtension;
 	}
-	zero_item(&f->tokenizer);
+	gb_zero_item(&f->tokenizer);
 	f->tokenizer.curr_file_id = f->id;
 
 	TokenizerInitError err = init_tokenizer_from_fullpath(&f->tokenizer, f->fullpath, build_context.copy_file_contents);
@@ -5609,7 +5645,7 @@ gb_internal AstPackage *try_add_import_path(Parser *p, String path, String const
 	pkg->foreign_files.allocator = permanent_allocator();
 
 	// NOTE(bill): Single file initial package
-	if (kind == Package_Init && string_ends_with(path, FILE_EXT)) {
+	if (kind == Package_Init && !path_is_directory(path) && string_ends_with(path, FILE_EXT)) {
 		FileInfo fi = {};
 		fi.name = filename_from_path(path);
 		fi.fullpath = path;
@@ -5861,7 +5897,6 @@ gb_internal bool determine_path_from_string(BlockingMutex *file_mutex, Ast *node
 		return false;
 	}
 
-
 	if (collection_name.len > 0) {
 		// NOTE(bill): `base:runtime` == `core:runtime`
 		if (collection_name == "core") {
@@ -6016,7 +6051,7 @@ gb_internal void parse_setup_file_decls(Parser *p, AstFile *f, String const &bas
 				Token fp_token = fp->BasicLit.token;
 				String file_str = string_trim_whitespace(string_value_from_token(f, fp_token));
 				String fullpath = file_str;
-				if (allow_check_foreign_filepath()) {
+				if (!is_arch_wasm() || string_ends_with(fullpath, str_lit(".o"))) {
 					String foreign_path = {};
 					bool ok = determine_path_from_string(&p->file_decl_mutex, node, base_dir, file_str, &foreign_path);
 					if (!ok) {
@@ -6380,8 +6415,6 @@ gb_internal bool parse_file(Parser *p, AstFile *f) {
 					} else if (lc == "+lazy") {
 						if (build_context.ignore_lazy) {
 							// Ignore
-						} else if (f->flags & AstFile_IsTest) {
-							// Ignore
 						} else if (f->pkg->kind == Package_Init && build_context.command_kind == Command_doc) {
 							// Ignore
 						} else {
@@ -6499,11 +6532,6 @@ gb_internal ParseFileError process_imported_file(Parser *p, ImportedFile importe
 	if (build_context.command_kind == Command_test) {
 		String name = file->fullpath;
 		name = remove_extension_from_path(name);
-
-		String test_suffix = str_lit("_test");
-		if (string_ends_with(name, test_suffix) && name != test_suffix) {
-			file->flags |= AstFile_IsTest;
-		}
 	}
 
 
@@ -6538,6 +6566,7 @@ gb_internal ParseFileError parse_packages(Parser *p, String init_filename) {
 	GB_ASSERT(init_filename.text[init_filename.len] == 0);
 
 	String init_fullpath = path_to_full_path(permanent_allocator(), init_filename);
+
 	if (!path_is_directory(init_fullpath)) {
 		String const ext = str_lit(".odin");
 		if (!string_ends_with(init_fullpath, ext)) {
@@ -6551,9 +6580,8 @@ gb_internal ParseFileError parse_packages(Parser *p, String init_filename) {
 		}
 		if ((build_context.command_kind & Command__does_build) &&
 		    build_context.build_mode == BuildMode_Executable) {
-			String short_path = filename_from_path(path);
-			char *cpath = alloc_cstring(temporary_allocator(), short_path);
-			if (gb_file_exists(cpath)) {
+			String output_path = path_to_string(temporary_allocator(), build_context.build_paths[8]);
+			if (path_is_directory(output_path)) {
 			    	error({}, "Please specify the executable name with -out:<string> as a directory exists with the same name in the current working directory");
 			    	return ParseFile_DirectoryAlreadyExists;
 			}
@@ -6621,6 +6649,13 @@ gb_internal ParseFileError parse_packages(Parser *p, String init_filename) {
 			}
 		}
 	}
+
+	for (AstPackage *pkg : p->packages) {
+		for (AstFile *file : pkg->files) {
+			p->total_seen_load_directive_count += file->seen_load_directive_count;
+		}
+	}
+
 	return ParseFile_None;
 }
 

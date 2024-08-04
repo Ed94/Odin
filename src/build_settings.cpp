@@ -326,7 +326,17 @@ enum SanitizerFlags : u32 {
 	SanitizerFlag_Thread  = 1u<<2,
 };
 
+struct BuildCacheData {
+	u64 crc;
+	String cache_dir;
 
+	// manifests
+	String files_path;
+	String args_path;
+	String env_path;
+
+	bool copy_already_done;
+};
 
 // This stores the information for the specify architecture of this build
 struct BuildContext {
@@ -426,6 +436,12 @@ struct BuildContext {
 	bool   linker_map_file;
 
 	bool   use_separate_modules;
+	bool   module_per_file;
+	bool   cached;
+	BuildCacheData build_cache_data;
+
+	bool internal_no_inline;
+
 	bool   no_threaded_checker;
 
 	bool   show_debug_messages;
@@ -439,6 +455,8 @@ struct BuildContext {
 	bool   obfuscate_source_code_locations;
 
 	bool   min_link_libs;
+
+	bool   print_linker_flags;
 
 	RelocMode reloc_mode;
 	bool   disable_red_zone;
@@ -858,15 +876,6 @@ gb_internal bool is_arch_x86(void) {
 		return true;
 	}
 	return false;
-}
-
-gb_internal bool allow_check_foreign_filepath(void) {
-	switch (build_context.metrics.arch) {
-	case TargetArch_wasm32:
-	case TargetArch_wasm64p32:
-		return false;
-	}
-	return true;
 }
 
 // TODO(bill): OS dependent versions for the BuildContext
@@ -1639,13 +1648,26 @@ gb_internal void init_build_context(TargetMetrics *cross_target, Subtarget subta
 		}
 	}
 
-	if (bc->ODIN_DEBUG && !bc->custom_optimization_level) {
+	if (!bc->custom_optimization_level) {
 		// NOTE(bill): when building with `-debug` but not specifying an optimization level
 		// default to `-o:none` to improve the debug symbol generation by default
-		bc->optimization_level = -1; // -o:none
+		if (bc->ODIN_DEBUG) {
+			bc->optimization_level = -1; // -o:none
+		} else {
+			bc->optimization_level = 0; // -o:minimal
+		}
 	}
 
 	bc->optimization_level = gb_clamp(bc->optimization_level, -1, 3);
+
+#if defined(GB_SYSTEM_WINDOWS)
+	if (bc->optimization_level <= 0) {
+		if (!is_arch_wasm()) {
+			bc->use_separate_modules = true;
+		}
+	}
+#endif
+
 
 	// TODO: Static map calls are bugged on `amd64sysv` abi.
 	if (bc->metrics.os != TargetOs_windows && bc->metrics.arch == TargetArch_amd64) {
@@ -1798,10 +1820,12 @@ gb_internal bool init_build_paths(String init_filename) {
 	#if defined(GB_SYSTEM_WINDOWS)
 	if (bc->metrics.os == TargetOs_windows) {
 		if (bc->resource_filepath.len > 0) {
-			bc->build_paths[BuildPath_RC]      = path_from_string(ha, bc->resource_filepath);
-			bc->build_paths[BuildPath_RES]     = path_from_string(ha, bc->resource_filepath);
-			bc->build_paths[BuildPath_RC].ext  = copy_string(ha, STR_LIT("rc"));
-			bc->build_paths[BuildPath_RES].ext = copy_string(ha, STR_LIT("res"));
+			bc->build_paths[BuildPath_RES] = path_from_string(ha, bc->resource_filepath);
+			if (!string_ends_with(bc->resource_filepath, str_lit(".res"))) {
+				bc->build_paths[BuildPath_RES].ext = copy_string(ha, STR_LIT("res"));
+				bc->build_paths[BuildPath_RC]      = path_from_string(ha, bc->resource_filepath);
+				bc->build_paths[BuildPath_RC].ext  = copy_string(ha, STR_LIT("rc"));
+			}
 		}
 
 		if (bc->pdb_filepath.len > 0) {
@@ -1987,15 +2011,20 @@ gb_internal bool init_build_paths(String init_filename) {
 		}
 	}
 
+	String output_file = path_to_string(ha, bc->build_paths[BuildPath_Output]);
+	defer (gb_free(ha, output_file.text));
+
 	// Check if output path is a directory.
 	if (path_is_directory(bc->build_paths[BuildPath_Output])) {
-		String output_file = path_to_string(ha, bc->build_paths[BuildPath_Output]);
-		defer (gb_free(ha, output_file.text));
 		gb_printf_err("Output path %.*s is a directory.\n", LIT(output_file));
 		return false;
 	}
 
-	if (!write_directory(bc->build_paths[BuildPath_Output].basename)) {
+	gbFile output_file_test;
+	gbFileError output_test_err = gb_file_open_mode(&output_file_test, gbFileMode_Append | gbFileMode_Rw, (const char*)output_file.text);
+	defer (gb_file_close(&output_file_test));
+
+	if (output_test_err != 0) {
 		String output_file = path_to_string(ha, bc->build_paths[BuildPath_Output]);
 		defer (gb_free(ha, output_file.text));
 		gb_printf_err("No write permissions for output path: %.*s\n", LIT(output_file));

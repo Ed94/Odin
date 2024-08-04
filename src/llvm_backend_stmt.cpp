@@ -1579,7 +1579,8 @@ gb_internal void lb_store_type_case_implicit(lbProcedure *p, Ast *clause, lbValu
 		lb_addr_store(p, x, value);
 	} else {
 		if (!is_default_case) {
-			GB_ASSERT_MSG(are_types_identical(e->type, type_deref(value.type)), "%s %s", type_to_string(e->type), type_to_string(value.type));
+			Type *clause_type = e->type;
+			GB_ASSERT_MSG(are_types_identical(type_deref(clause_type), type_deref(value.type)), "%s %s", type_to_string(clause_type), type_to_string(value.type));
 		}
 		lb_add_entity(p->module, e, value);
 	}
@@ -1735,10 +1736,17 @@ gb_internal void lb_build_type_switch_stmt(lbProcedure *p, AstTypeSwitchStmt *ss
 
 	for (Ast *clause : body->stmts) {
 		ast_node(cc, CaseClause, clause);
+
+		Entity *case_entity = implicit_entity_of_node(clause);
 		lb_open_scope(p, cc->scope);
+
 		if (cc->list.count == 0) {
 			lb_start_block(p, default_block);
-			lb_store_type_case_implicit(p, clause, parent_value, true);
+			if (case_entity->flags & EntityFlag_Value) {
+				lb_store_type_case_implicit(p, clause, parent_value, true);
+			} else {
+				lb_store_type_case_implicit(p, clause, parent_ptr, true);
+			}
 			lb_type_case_body(p, ss->label, clause, p->curr_block, done);
 			continue;
 		}
@@ -1768,7 +1776,6 @@ gb_internal void lb_build_type_switch_stmt(lbProcedure *p, AstTypeSwitchStmt *ss
 			LLVMAddCase(switch_instr, on_val.value, body->block);
 		}
 
-		Entity *case_entity = implicit_entity_of_node(clause);
 
 		lb_start_block(p, body);
 
@@ -1781,6 +1788,7 @@ gb_internal void lb_build_type_switch_stmt(lbProcedure *p, AstTypeSwitchStmt *ss
 			} else if (switch_kind == TypeSwitch_Any) {
 				data = lb_emit_load(p, lb_emit_struct_ep(p, parent_ptr, 0));
 			}
+			GB_ASSERT(is_type_pointer(data.type));
 
 			Type *ct = case_entity->type;
 			Type *ct_ptr = alloc_type_pointer(ct);

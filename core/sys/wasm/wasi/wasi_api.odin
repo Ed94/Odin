@@ -16,6 +16,7 @@ CLOCK_REALTIME           :: clockid_t(2)
 CLOCK_THREAD_CPUTIME_ID  :: clockid_t(3)
 
 errno_t :: enum u16 {
+	NONE = 0,
 	// No error occurred. System call completed successfully.
 	SUCCESS = 0,
 	// Argument list too long.
@@ -962,7 +963,7 @@ prestat_dir_t :: struct {
 }
 
 prestat_t :: struct {
-	tag: u8,
+	tag: preopentype_t,
 	using u: struct {
 		dir: prestat_dir_t,
 	},
@@ -1158,7 +1159,7 @@ foreign wasi {
 		/**
 		 * A buffer into which to write the preopened directory name.
 		 */
-		path: string,
+		path: []byte,
 	) -> errno_t ---
 	/**
 	 * Create a directory.

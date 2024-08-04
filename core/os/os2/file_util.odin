@@ -8,6 +8,18 @@ write_string :: proc(f: ^File, s: string) -> (n: int, err: Error) {
 	return write(f, transmute([]byte)s)
 }
 
+write_strings :: proc(f: ^File, strings: ..string) -> (n: int, err: Error) {
+	for s in strings {
+		m: int
+		m, err = write_string(f, s)
+		n += m
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
 write_byte :: proc(f: ^File, b: byte) -> (n: int, err: Error) {
 	return write(f, []byte{b})
 }
@@ -61,6 +73,24 @@ write_encoded_rune :: proc(f: ^File, r: rune) -> (n: int, err: Error) {
 	return
 }
 
+read_at_least :: proc(f: ^File, buf: []byte, min: int) -> (n: int, err: Error) {
+	if len(buf) < min {
+		return 0, .Short_Buffer
+	}
+	nn := max(int)
+	for nn > 0 && n < min && err == nil {
+		nn, err = read(f, buf[n:])
+		n += nn
+	}
+	if n >= min {
+		err = nil
+	}
+	return
+}
+
+read_full :: proc(f: ^File, buf: []byte) -> (n: int, err: Error) {
+	return read_at_least(f, buf, len(buf))
+}
 
 write_ptr :: proc(f: ^File, data: rawptr, len: int) -> (n: int, err: Error) {
 	return write(f, ([^]byte)(data)[:len])
@@ -138,16 +168,13 @@ read_entire_file_from_file :: proc(f: ^File, allocator: runtime.Allocator) -> (d
 }
 
 @(require_results)
-write_entire_file :: proc(name: string, data: []byte, perm: File_Mode, truncate := true) -> Error {
+write_entire_file :: proc(name: string, data: []byte, perm: int, truncate := true) -> Error {
 	flags := O_WRONLY|O_CREATE
 	if truncate {
 		flags |= O_TRUNC
 	}
-	f, err := open(name, flags, perm)
-	if err != nil {
-		return err
-	}
-	_, err = write(f, data)
+	f := open(name, flags, perm) or_return
+	_, err := write(f, data)
 	if cerr := close(f); cerr != nil && err == nil {
 		err = cerr
 	}

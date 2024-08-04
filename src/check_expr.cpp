@@ -127,6 +127,8 @@ gb_internal bool complete_soa_type(Checker *checker, Type *t, bool wait_to_finis
 
 gb_internal bool check_is_castable_to(CheckerContext *c, Operand *operand, Type *y);
 
+gb_internal bool is_exact_value_zero(ExactValue const &v);
+
 enum LoadDirectiveResult {
 	LoadDirective_Success  = 0,
 	LoadDirective_Error    = 1,
@@ -500,7 +502,9 @@ gb_internal bool find_or_generate_polymorphic_procedure(CheckerContext *old_c, E
 		nctx.no_polymorphic_errors = false;
 
 		// NOTE(bill): Reset scope from the failed procedure type
-		scope_reset(scope);
+		scope->head_child.store(nullptr, std::memory_order_relaxed);
+		string_map_clear(&scope->elements);
+		ptr_set_clear(&scope->imported);
 
 		// LEAK NOTE(bill): Cloning this AST may be leaky but this is not really an issue due to arena-based allocation
 		Ast *cloned_proc_type_node = clone_ast(pt->node);
@@ -548,13 +552,15 @@ gb_internal bool find_or_generate_polymorphic_procedure(CheckerContext *old_c, E
 	final_proc_type->Proc.is_poly_specialized = true;
 	final_proc_type->Proc.is_polymorphic = true;
 
-	final_proc_type->Proc.variadic            = src->Proc.variadic;
-	final_proc_type->Proc.require_results     = src->Proc.require_results;
-	final_proc_type->Proc.c_vararg            = src->Proc.c_vararg;
-	final_proc_type->Proc.has_named_results   = src->Proc.has_named_results;
-	final_proc_type->Proc.diverging           = src->Proc.diverging;
-	final_proc_type->Proc.return_by_pointer   = src->Proc.return_by_pointer;
-	final_proc_type->Proc.optional_ok         = src->Proc.optional_ok;
+	final_proc_type->Proc.variadic               = src->Proc.variadic;
+	final_proc_type->Proc.require_results        = src->Proc.require_results;
+	final_proc_type->Proc.c_vararg               = src->Proc.c_vararg;
+	final_proc_type->Proc.has_named_results      = src->Proc.has_named_results;
+	final_proc_type->Proc.diverging              = src->Proc.diverging;
+	final_proc_type->Proc.return_by_pointer      = src->Proc.return_by_pointer;
+	final_proc_type->Proc.optional_ok            = src->Proc.optional_ok;
+	final_proc_type->Proc.enable_target_feature  = src->Proc.enable_target_feature;
+	final_proc_type->Proc.require_target_feature = src->Proc.require_target_feature;
 
 
 	for (isize i = 0; i < operands.count; i++) {
@@ -587,6 +593,16 @@ gb_internal bool find_or_generate_polymorphic_procedure(CheckerContext *old_c, E
 	entity->file = base_entity->file;
 	entity->pkg = base_entity->pkg;
 	entity->flags = 0;
+
+	entity->Procedure.optimization_mode = base_entity->Procedure.optimization_mode;
+
+	if (base_entity->flags & EntityFlag_Cold) {
+		entity->flags |= EntityFlag_Cold;
+	}
+	if (base_entity->flags & EntityFlag_Disabled) {
+		entity->flags |= EntityFlag_Disabled;
+	}
+
 	d->entity = entity;
 
 	AstFile *file = nullptr;
@@ -4443,6 +4459,27 @@ gb_internal void convert_to_typed(CheckerContext *c, Operand *operand, Type *tar
 		
 
 	case Type_Union:
+		// IMPORTANT NOTE HACK(bill): This is just to allow for comparisons against `0` with the `os.Error` type
+		// as a kind of transition period
+		if (!build_context.strict_style &&
+		    operand->mode == Addressing_Constant &&
+		    target_type->kind == Type_Named &&
+		    (c->pkg == nullptr || c->pkg->name != "os") &&
+		    target_type->Named.name == "Error") {
+			Entity *e = target_type->Named.type_name;
+			if (e->pkg && e->pkg->name == "os") {
+				if (is_exact_value_zero(operand->value) &&
+				    (operand->value.kind == ExactValue_Integer ||
+				     operand->value.kind == ExactValue_Float)) {
+					operand->mode = Addressing_Value;
+					target_type = t_untyped_nil;
+				     	operand->value = empty_exact_value;
+					update_untyped_expr_value(c, operand->expr, operand->value);
+					break;
+				}
+			}
+		}
+		// "fallthrough"
 		if (!is_operand_nil(*operand) && !is_operand_uninit(*operand)) {
 			TEMPORARY_ALLOCATOR_GUARD();
 
@@ -4968,7 +5005,27 @@ gb_internal bool is_entity_declared_for_selector(Entity *entity, Scope *import_s
 
 // NOTE(bill, 2022-02-03): see `check_const_decl` for why it exists reasoning
 gb_internal Entity *check_entity_from_ident_or_selector(CheckerContext *c, Ast *node, bool ident_only) {
-	if (node->kind == Ast_Ident) {
+	if (node == nullptr) {
+		return nullptr;
+	}
+	/*if (node->kind == Ast_TernaryWhenExpr) {
+		ast_node(we, TernaryWhenExpr, node);
+		if (we->cond == nullptr) {
+			return nullptr;
+		}
+		if (we->cond->tav.mode != Addressing_Constant) {
+			return nullptr;
+		}
+		if (we->cond->tav.value.kind != ExactValue_Bool) {
+			return nullptr;
+		}
+		if (we->cond->tav.value.value_bool) {
+			return check_entity_from_ident_or_selector(c, we->x, ident_only);
+		} else {
+			Entity *e = check_entity_from_ident_or_selector(c, we->y, ident_only);
+			return e;
+		}
+	} else */if (node->kind == Ast_Ident) {
 		String name = node->Ident.token.string;
 		return scope_lookup(c->scope, name);
 	} else if (!ident_only) if (node->kind == Ast_SelectorExpr) {
@@ -6001,6 +6058,22 @@ gb_internal CallArgumentError check_call_arguments_internal(CheckerContext *c, A
 
 					Entity *vt = pt->params->Tuple.variables[pt->variadic_index];
 					o.type = vt->type;
+
+					// NOTE(bill, 2024-07-14): minimize the stack usage for variadic parameters with the backing array
+					if (c->decl) {
+						bool found = false;
+						for (auto &vr : c->decl->variadic_reuses) {
+							if (are_types_identical(vt->type, vr.slice_type)) {
+								vr.max_count = gb_max(vr.max_count, variadic_operands.count);
+								found = true;
+								break;
+							}
+						}
+						if (!found) {
+							array_add(&c->decl->variadic_reuses, VariadicReuseData{vt->type, variadic_operands.count});
+						}
+					}
+
 				} else {
 					dummy_argument_count += 1;
 					o.type = t_untyped_nil;
@@ -7165,6 +7238,8 @@ gb_internal CallArgumentError check_polymorphic_record_type(CheckerContext *c, O
 	Array<Operand> operands = {};
 	defer (array_free(&operands));
 
+	CallArgumentError err = CallArgumentError_None;
+
 	bool named_fields = false;
 	{
 		// NOTE(bill, 2019-10-26): Allow a cycle in the parameters but not in the fields themselves
@@ -7182,6 +7257,11 @@ gb_internal CallArgumentError check_polymorphic_record_type(CheckerContext *c, O
 				Ast *arg = ce->args[i];
 				ast_node(fv, FieldValue, arg);
 
+				if (fv->value == nullptr) {
+					error(fv->eq, "Expected a value");
+					err = CallArgumentError_InvalidFieldValue; 
+					continue;
+				}
 				if (fv->field->kind == Ast_Ident) {
 					String name = fv->field->Ident.token.string;
 					isize index = lookup_polymorphic_record_parameter(original_type, name);
@@ -7220,7 +7300,10 @@ gb_internal CallArgumentError check_polymorphic_record_type(CheckerContext *c, O
 
 	}
 
-	CallArgumentError err = CallArgumentError_None;
+	if (err != 0) {
+		operand->mode = Addressing_Invalid;
+		return err;
+	}
 
 	TypeTuple *tuple = get_record_polymorphic_params(original_type);
 	isize param_count = tuple->variables.count;
@@ -7848,12 +7931,15 @@ gb_internal ExprKind check_call_expr(CheckerContext *c, Operand *operand, Ast *c
 
 			// NOTE: Due to restrictions in LLVM you can not inline calls with a superset of features.
 			if (is_call_inlined) {
-				GB_ASSERT(c->curr_proc_decl);
-				GB_ASSERT(c->curr_proc_decl->entity);
-				GB_ASSERT(c->curr_proc_decl->entity->type->kind == Type_Proc);
-				String scope_features = c->curr_proc_decl->entity->type->Proc.enable_target_feature;
-				if (!check_target_feature_is_superset_of(scope_features, pt->Proc.enable_target_feature, &invalid)) {
-					error(call, "Inlined procedure enables target feature '%.*s', this requires the calling procedure to at least enable the same feature", LIT(invalid));
+				if (c->curr_proc_decl == nullptr) {
+					error(call, "Calling a '#force_inline' procedure that enables target features is not allowed at file scope");
+				} else {
+					GB_ASSERT(c->curr_proc_decl->entity);
+					GB_ASSERT(c->curr_proc_decl->entity->type->kind == Type_Proc);
+					String scope_features = c->curr_proc_decl->entity->type->Proc.enable_target_feature;
+					if (!check_target_feature_is_superset_of(scope_features, pt->Proc.enable_target_feature, &invalid)) {
+						error(call, "Inlined procedure enables target feature '%.*s', this requires the calling procedure to at least enable the same feature", LIT(invalid));
+					}
 				}
 			}
 		}
@@ -9886,8 +9972,12 @@ gb_internal ExprKind check_compound_literal(CheckerContext *c, Operand *o, Ast *
 		}
 		Type *et = base_type(t->BitSet.elem);
 		isize field_count = 0;
-		if (et->kind == Type_Enum) {
+		if (et != nullptr && et->kind == Type_Enum) {
 			field_count = et->Enum.fields.count;
+		}
+
+		if (is_type_array(bit_set_to_int(t))) {
+			is_constant = false;
 		}
 
 		if (cl->elems[0]->kind == Ast_FieldValue) {

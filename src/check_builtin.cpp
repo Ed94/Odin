@@ -1079,7 +1079,7 @@ gb_internal bool check_builtin_simd_operation(CheckerContext *c, Operand *operan
 	return false;
 }
 
-gb_internal bool cache_load_file_directive(CheckerContext *c, Ast *call, String const &original_string, bool err_on_not_found, LoadFileCache **cache_, LoadFileTier tier) {
+gb_internal bool cache_load_file_directive(CheckerContext *c, Ast *call, String const &original_string, bool err_on_not_found, LoadFileCache **cache_, LoadFileTier tier, bool use_mutex=true) {
 	ast_node(ce, CallExpr, call);
 	ast_node(bd, BasicDirective, ce->proc);
 	String builtin_name = bd->name.string;
@@ -1101,7 +1101,8 @@ gb_internal bool cache_load_file_directive(CheckerContext *c, Ast *call, String 
 		}
 	}
 
-	MUTEX_GUARD(&c->info->load_file_mutex);
+	if (use_mutex) mutex_lock(&c->info->load_file_mutex);
+	defer (if (use_mutex) mutex_unlock(&c->info->load_file_mutex));
 
 	gbFileError file_error = gbFileError_None;
 	String data = {};
@@ -1296,6 +1297,9 @@ gb_internal LoadDirectiveResult check_load_directive(CheckerContext *c, Operand 
 gb_internal int file_cache_sort_cmp(void const *x, void const *y) {
 	LoadFileCache const *a = *(LoadFileCache const **)(x);
 	LoadFileCache const *b = *(LoadFileCache const **)(y);
+	if (a == b) {
+		return 0;
+	}
 	return string_compare(a->path, b->path);
 }
 
@@ -1411,9 +1415,12 @@ gb_internal LoadDirectiveResult check_load_directory_directive(CheckerContext *c
 
 		file_caches = array_make<LoadFileCache *>(heap_allocator(), 0, files_to_reserve);
 
+		mutex_lock(&c->info->load_file_mutex);
+		defer (mutex_unlock(&c->info->load_file_mutex));
+
 		for (FileInfo fi : list) {
 			LoadFileCache *cache = nullptr;
-			if (cache_load_file_directive(c, call, fi.fullpath, err_on_not_found, &cache, LoadFileTier_Contents)) {
+			if (cache_load_file_directive(c, call, fi.fullpath, err_on_not_found, &cache, LoadFileTier_Contents, /*use_mutex*/false)) {
 				array_add(&file_caches, cache);
 			} else {
 				result = LoadDirective_Error;
@@ -2304,6 +2311,14 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 			error(o.expr, "Invalid argument to 'type_of'");
 			return false;
 		}
+
+		if (is_type_untyped(o.type)) {
+			gbString t = type_to_string(o.type);
+			error(o.expr, "'type_of' of %s cannot be determined", t);
+			gb_string_free(t);
+			return false;
+		}
+
 		// NOTE(bill): Prevent type cycles for procedure declarations
 		if (c->curr_proc_sig == o.type) {
 			gbString s = expr_to_string(o.expr);
@@ -4298,6 +4313,49 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 
 			operand->mode = Addressing_Value;
 			operand->type = make_optional_ok_type(default_type(x.type));
+		}
+		break;
+
+	case BuiltinProc_add_sat:
+	case BuiltinProc_sub_sat:
+		{
+			Operand x = {};
+			Operand y = {};
+			check_expr(c, &x, ce->args[0]);
+			check_expr(c, &y, ce->args[1]);
+			if (x.mode == Addressing_Invalid) {
+				return false;
+			}
+			if (y.mode == Addressing_Invalid) {
+				return false;
+			}
+			convert_to_typed(c, &y, x.type); if (y.mode == Addressing_Invalid) return false;
+			convert_to_typed(c, &x, y.type);
+			if (is_type_untyped(x.type)) {
+				gbString xts = type_to_string(x.type);
+				error(x.expr, "Expected a typed integer for '%.*s', got %s", LIT(builtin_name), xts);
+				gb_string_free(xts);
+				return false;
+			}
+			if (!is_type_integer(x.type)) {
+				gbString xts = type_to_string(x.type);
+				error(x.expr, "Expected an integer for '%.*s', got %s", LIT(builtin_name), xts);
+				gb_string_free(xts);
+				return false;
+			}
+			Type *ct = core_type(x.type);
+			if (is_type_different_to_arch_endianness(ct)) {
+				GB_ASSERT(ct->kind == Type_Basic);
+				if (ct->Basic.flags & (BasicFlag_EndianLittle|BasicFlag_EndianBig)) {
+					gbString xts = type_to_string(x.type);
+					error(x.expr, "Expected an integer which does not specify the explicit endianness for '%.*s', got %s", LIT(builtin_name), xts);
+					gb_string_free(xts);
+					return false;
+				}
+			}
+
+			operand->mode = Addressing_Value;
+			operand->type = default_type(x.type);
 		}
 		break;
 

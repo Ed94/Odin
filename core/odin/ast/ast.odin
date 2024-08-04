@@ -599,6 +599,7 @@ Field_Flag :: enum {
 	Subtype,
 	By_Ptr,
 	No_Broadcast,
+	No_Capture,
 
 	Results,
 	Tags,
@@ -619,6 +620,7 @@ field_flag_strings := [Field_Flag]string{
 	.Subtype            = "#subtype",
 	.By_Ptr             = "#by_ptr",
 	.No_Broadcast       = "#no_broadcast",
+	.No_Capture         = "#no_capture",
 
 	.Results            = "results",
 	.Tags               = "field tag",
@@ -634,6 +636,7 @@ field_hash_flag_strings := []struct{key: string, flag: Field_Flag}{
 	{"subtype",      .Subtype},
 	{"by_ptr",       .By_Ptr},
 	{"no_broadcast", .No_Broadcast},
+	{"no_capture",   .No_Capture},
 }
 
 
@@ -754,7 +757,7 @@ Array_Type :: struct {
 	using node: Expr,
 	open:  tokenizer.Pos,
 	tag:   ^Expr,
-	len:   ^Expr, // Ellipsis node for [?]T array types, nil for slice types
+	len:   ^Expr, // Unary_Expr node for [?]T array types, nil for slice types
 	close: tokenizer.Pos,
 	elem:  ^Expr,
 }

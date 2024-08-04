@@ -61,6 +61,7 @@ gb_global Timings global_timings = {0};
 #include "llvm-c/Types.h"
 #else
 #include <llvm-c/Types.h>
+#include <signal.h>
 #endif
 
 #include "parser.hpp"
@@ -69,6 +70,8 @@ gb_global Timings global_timings = {0};
 #include "parser.cpp"
 #include "checker.cpp"
 #include "docs.cpp"
+
+#include "cached.cpp"
 
 #include "linker.cpp"
 
@@ -94,16 +97,38 @@ gb_global Timings global_timings = {0};
 #include "bug_report.cpp"
 
 // NOTE(bill): 'name' is used in debugging and profiling modes
-gb_internal i32 system_exec_command_line_app(char const *name, char const *fmt, ...) {
+gb_internal i32 system_exec_command_line_app_internal(bool exit_on_err, char const *name, char const *fmt, va_list va) {
 	isize const cmd_cap = 64<<20; // 64 MiB should be more than enough
 	char *cmd_line = gb_alloc_array(gb_heap_allocator(), char, cmd_cap);
 	isize cmd_len = 0;
-	va_list va;
 	i32 exit_code = 0;
 
-	va_start(va, fmt);
 	cmd_len = gb_snprintf_va(cmd_line, cmd_cap-1, fmt, va);
-	va_end(va);
+
+	if (build_context.print_linker_flags) {
+		// NOTE(bill): remove the first argument (the executable) from the executable list
+		// and then print it for the "linker flags"
+		while (*cmd_line && gb_char_is_space(*cmd_line)) {
+			cmd_line++;
+		}
+		if (*cmd_line == '\"') for (cmd_line++; *cmd_line; cmd_line++) {
+			if (*cmd_line == '\\') {
+				cmd_line++;
+				if (*cmd_line == '\"') {
+					cmd_line++;
+				}
+			} else if (*cmd_line == '\"') {
+				cmd_line++;
+				break;
+			}
+		}
+		while (*cmd_line && gb_char_is_space(*cmd_line)) {
+			cmd_line++;
+		}
+
+		fprintf(stdout, "%s\n", cmd_line);
+		return exit_code;
+	}
 
 #if defined(GB_SYSTEM_WINDOWS)
 	STARTUPINFOW start_info = {gb_size_of(STARTUPINFOW)};
@@ -143,16 +168,34 @@ gb_internal i32 system_exec_command_line_app(char const *name, char const *fmt, 
 		gb_printf_err("%s\n\n", cmd_line);
 	}
 	exit_code = system(cmd_line);
+	if (exit_on_err && WIFSIGNALED(exit_code)) {
+		raise(WTERMSIG(exit_code));
+	}
 	if (WIFEXITED(exit_code)) {
 		exit_code = WEXITSTATUS(exit_code);
 	}
 #endif
 
-	if (exit_code) {
+	if (exit_on_err && exit_code) {
 		exit(exit_code);
 	}
 
 	return exit_code;
+}
+
+gb_internal i32 system_exec_command_line_app(char const *name, char const *fmt, ...) {
+	va_list va;
+	va_start(va, fmt);
+	i32 exit_code = system_exec_command_line_app_internal(/* exit_on_err= */ false, name, fmt, va);
+	va_end(va);
+	return exit_code;
+}
+
+gb_internal void system_must_exec_command_line_app(char const *name, char const *fmt, ...) {
+	va_list va;
+	va_start(va, fmt);
+	system_exec_command_line_app_internal(/* exit_on_err= */ true, name, fmt, va);
+	va_end(va);
 }
 
 #if defined(GB_SYSTEM_WINDOWS)
@@ -343,10 +386,15 @@ enum BuildFlagKind {
 
 	BuildFlag_MinLinkLibs,
 
+	BuildFlag_PrintLinkerFlags,
+
 	// internal use only
 	BuildFlag_InternalIgnoreLazy,
 	BuildFlag_InternalIgnoreLLVMBuild,
 	BuildFlag_InternalIgnorePanic,
+	BuildFlag_InternalModulePerFile,
+	BuildFlag_InternalCached,
+	BuildFlag_InternalNoInline,
 
 	BuildFlag_Tilde,
 
@@ -544,15 +592,21 @@ gb_internal bool parse_build_flags(Array<String> args) {
 
 	add_flag(&build_flags, BuildFlag_MinLinkLibs,             str_lit("min-link-libs"),             BuildFlagParam_None,    Command__does_build);
 
+	add_flag(&build_flags, BuildFlag_PrintLinkerFlags,        str_lit("print-linker-flags"),        BuildFlagParam_None,    Command_build);
+
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLazy,      str_lit("internal-ignore-lazy"),      BuildFlagParam_None,    Command_all);
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLLVMBuild, str_lit("internal-ignore-llvm-build"),BuildFlagParam_None,    Command_all);
-	add_flag(&build_flags, BuildFlag_InternalIgnorePanic,    str_lit("internal-ignore-panic"),     BuildFlagParam_None,    Command_all);
+	add_flag(&build_flags, BuildFlag_InternalIgnorePanic,     str_lit("internal-ignore-panic"),     BuildFlagParam_None,    Command_all);
+	add_flag(&build_flags, BuildFlag_InternalModulePerFile,   str_lit("internal-module-per-file"),  BuildFlagParam_None,    Command_all);
+	add_flag(&build_flags, BuildFlag_InternalCached,          str_lit("internal-cached"),           BuildFlagParam_None,    Command_all);
+	add_flag(&build_flags, BuildFlag_InternalNoInline,        str_lit("internal-no-inline"),        BuildFlagParam_None,    Command_all);
 
 #if ALLOW_TILDE
 	add_flag(&build_flags, BuildFlag_Tilde,                   str_lit("tilde"),                     BuildFlagParam_None,    Command__does_build);
 #endif
 
 	add_flag(&build_flags, BuildFlag_Sanitize,                str_lit("sanitize"),                  BuildFlagParam_String,  Command__does_build, true);
+
 
 #if defined(GB_SYSTEM_WINDOWS)
 	add_flag(&build_flags, BuildFlag_IgnoreVsSearch,          str_lit("ignore-vs-search"),          BuildFlagParam_None,    Command__does_build);
@@ -812,8 +866,7 @@ gb_internal bool parse_build_flags(Array<String> args) {
 								gb_printf_err("\tjson\n");
 								bad_flags = true;
 							}
-
-							break;	
+							break;
 						}
 						case BuildFlag_ExportDependenciesFile: {
 							GB_ASSERT(value.kind == ExactValue_String);
@@ -1351,6 +1404,10 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							build_context.min_link_libs = true;
 							break;
 
+						case BuildFlag_PrintLinkerFlags:
+							build_context.print_linker_flags = true;
+							break;
+
 						case BuildFlag_InternalIgnoreLazy:
 							build_context.ignore_lazy = true;
 							break;
@@ -1360,6 +1417,18 @@ gb_internal bool parse_build_flags(Array<String> args) {
 						case BuildFlag_InternalIgnorePanic:
 							build_context.ignore_panic = true;
 							break;
+						case BuildFlag_InternalModulePerFile:
+							build_context.module_per_file = true;
+							build_context.use_separate_modules = true;
+							break;
+						case BuildFlag_InternalCached:
+							build_context.cached = true;
+							build_context.use_separate_modules = true;
+							break;
+						case BuildFlag_InternalNoInline:
+							build_context.internal_no_inline = true;
+							break;
+
 						case BuildFlag_Tilde:
 							build_context.tilde_backend = true;
 							break;
@@ -1379,6 +1448,7 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							}
 							break;
 
+
 					#if defined(GB_SYSTEM_WINDOWS)
 						case BuildFlag_IgnoreVsSearch: {
 							GB_ASSERT(value.kind == ExactValue_Invalid);
@@ -1390,8 +1460,9 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							String path = value.value_string;
 							path = string_trim_whitespace(path);
 							if (is_build_flag_path_valid(path)) {
-								if(!string_ends_with(path, str_lit(".rc"))) {
-									gb_printf_err("Invalid -resource path %.*s, missing .rc\n", LIT(path));
+								bool is_resource = string_ends_with(path, str_lit(".rc")) || string_ends_with(path, str_lit(".res"));
+								if(!is_resource) {
+									gb_printf_err("Invalid -resource path %.*s, missing .rc or .res file\n", LIT(path));
 									bad_flags = true;
 									break;
 								} else if (!gb_file_exists((const char *)path.text)) {
@@ -1519,6 +1590,16 @@ gb_internal bool parse_build_flags(Array<String> args) {
 		gb_printf_err("`-export-timings:<format>` requires `-show-timings` or `-show-more-timings` to be present\n");
 		bad_flags = true;
 	}
+
+
+	if (build_context.export_dependencies_format != DependenciesExportUnspecified && build_context.print_linker_flags) {
+		gb_printf_err("-export-dependencies cannot be used with -print-linker-flags\n");
+		bad_flags = true;
+	} else if (build_context.show_timings && build_context.print_linker_flags) {
+		gb_printf_err("-show-timings/-show-more-timings cannot be used with -print-linker-flags\n");
+		bad_flags = true;
+	}
+
 	return !bad_flags;
 }
 
@@ -1854,7 +1935,13 @@ gb_internal void show_timings(Checker *c, Timings *t) {
 	}
 }
 
-gb_internal void export_dependencies(Parser *p) {
+gb_internal GB_COMPARE_PROC(file_path_cmp) {
+	AstFile *x = *(AstFile **)a;
+	AstFile *y = *(AstFile **)b;
+	return string_compare(x->fullpath, y->fullpath);
+}
+
+gb_internal void export_dependencies(Checker *c) {
 	GB_ASSERT(build_context.export_dependencies_format != DependenciesExportUnspecified);
 
 	if (build_context.export_dependencies_file.len <= 0) {
@@ -1862,6 +1949,8 @@ gb_internal void export_dependencies(Parser *p) {
 		exit_with_errors();
 		return;
 	}
+
+	Parser *p = c->parser;
 
 	gbFile f = {};
 	char * fileName = (char *)build_context.export_dependencies_file.text;
@@ -1873,6 +1962,26 @@ gb_internal void export_dependencies(Parser *p) {
 	}
 	defer (gb_file_close(&f));
 
+
+	auto files = array_make<AstFile *>(heap_allocator());
+	for (AstPackage *pkg : p->packages) {
+		for (AstFile *f : pkg->files) {
+			array_add(&files, f);
+		}
+	}
+	array_sort(files, file_path_cmp);
+
+
+	auto load_files = array_make<LoadFileCache *>(heap_allocator());
+	for (auto const &entry : c->info.load_file_cache) {
+		auto *cache = entry.value;
+		if (!cache || !cache->exists) {
+			continue;
+		}
+		array_add(&load_files, cache);
+	}
+	array_sort(files, file_cache_sort_cmp);
+
 	if (build_context.export_dependencies_format == DependenciesExportMake) {
 		String exe_name = path_to_string(heap_allocator(), build_context.build_paths[BuildPath_Output]);
 		defer (gb_free(heap_allocator(), exe_name.text));
@@ -1881,26 +1990,25 @@ gb_internal void export_dependencies(Parser *p) {
 
 		isize current_line_length = exe_name.len + 1;
 
-		for(AstPackage *pkg : p->packages) {
-			for(AstFile *file : pkg->files) {
-				/* Arbitrary line break value. Maybe make this better? */
-				if (current_line_length >= 80-2) {
-					gb_file_write(&f, " \\\n ", 4);
-					current_line_length = 1;
-				}
+		for_array(i, files) {
+			AstFile *file = files[i];
+			/* Arbitrary line break value. Maybe make this better? */
+			if (current_line_length >= 80-2) {
+				gb_file_write(&f, " \\\n ", 4);
+				current_line_length = 1;
+			}
 
-				gb_file_write(&f, " ", 1);
-				current_line_length++;
+			gb_file_write(&f, " ", 1);
+			current_line_length++;
 
-				for (isize k = 0; k < file->fullpath.len; k++) {
-					char part = file->fullpath.text[k];
-					if (part == ' ') {
-						gb_file_write(&f, "\\", 1);
-						current_line_length++;
-					}
-					gb_file_write(&f, &part, 1);
+			for (isize k = 0; k < file->fullpath.len; k++) {
+				char part = file->fullpath.text[k];
+				if (part == ' ') {
+					gb_file_write(&f, "\\", 1);
 					current_line_length++;
 				}
+				gb_file_write(&f, &part, 1);
+				current_line_length++;
 			}
 		}
 
@@ -1910,13 +2018,29 @@ gb_internal void export_dependencies(Parser *p) {
 
 		gb_fprintf(&f, "\t\"source_files\": [\n");
 
-		for(AstPackage *pkg : p->packages) {
-			for(AstFile *file : pkg->files) {
-				gb_fprintf(&f, "\t\t\"%.*s\",\n", LIT(file->fullpath));
+		for_array(i, files) {
+			AstFile *file = files[i];
+			gb_fprintf(&f, "\t\t\"%.*s\"", LIT(file->fullpath));
+			if (i+1 == files.count) {
+				gb_fprintf(&f, ",");
 			}
+			gb_fprintf(&f, "\n");
 		}
 
 		gb_fprintf(&f, "\t],\n");
+
+		gb_fprintf(&f, "\t\"load_files\": [\n");
+
+		for_array(i, load_files) {
+			LoadFileCache *cache = load_files[i];
+			gb_fprintf(&f, "\t\t\"%.*s\"", LIT(cache->path));
+			if (i+1 == load_files.count) {
+				gb_fprintf(&f, ",");
+			}
+			gb_fprintf(&f, "\n");
+		}
+
+		gb_fprintf(&f, "\t]\n");
 
 		gb_fprintf(&f, "}\n");
 	}
@@ -2148,7 +2272,6 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(3, "-build-mode:shared      Builds as a dynamically linked library.");
 		print_usage_line(3, "-build-mode:lib         Builds as a statically linked library.");
 		print_usage_line(3, "-build-mode:static      Builds as a statically linked library.");
-		print_usage_line(3, "-build-mode:lib         Builds as an static library.");
 		print_usage_line(3, "-build-mode:obj         Builds as an object file.");
 		print_usage_line(3, "-build-mode:object      Builds as an object file.");
 		print_usage_line(3, "-build-mode:assembly    Builds as an assembly file.");
@@ -2195,9 +2318,9 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-use-separate-modules");
-		print_usage_line(1, "[EXPERIMENTAL]");
 		print_usage_line(2, "The backend generates multiple build units which are then linked together.");
 		print_usage_line(2, "Normally, a single build unit is generated for a standard project.");
+		print_usage_line(2, "This is the default behaviour on Windows for '-o:none' and '-o:minimal' builds.");
 		print_usage_line(0, "");
 
 	}
@@ -2346,6 +2469,12 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(0, "");
 	}
 
+	if (build) {
+		print_usage_line(1, "-print-linker-flags");
+		print_usage_line(2, "Prints the all of the flags/arguments that will be passed to the linker.");
+		print_usage_line(0, "");
+	}
+
 	if (check) {
 		print_usage_line(1, "-disallow-do");
 		print_usage_line(2, "Disallows the 'do' keyword in the project.");
@@ -2432,6 +2561,7 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(2, "[Windows only]");
 		print_usage_line(2, "Defines the resource file for the executable.");
 		print_usage_line(2, "Example: -resource:path/to/file.rc");
+		print_usage_line(2, "or:      -resource:path/to/file.res for a precompiled one.");
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-pdb-name:<filepath>");
@@ -2937,6 +3067,8 @@ int main(int arg_count, char const **arg_ptr) {
 	} else if (command == "root") {
 		gb_printf("%.*s", LIT(odin_root_dir()));
 		return 0;
+	} else if (command == "clear-cache") {
+		return try_clear_cache() ? 0 : 1;
 	} else {
 		String argv1 = {};
 		if (args.count > 1) {
@@ -3149,12 +3281,19 @@ int main(int arg_count, char const **arg_ptr) {
 		print_all_errors();
 	}
 
-	MAIN_TIME_SECTION("type check");
 
 	checker->parser = parser;
 	init_checker(checker);
-	defer (destroy_checker(checker));
+	defer (destroy_checker(checker)); // this is here because of a `goto`
 
+	if (build_context.cached && parser->total_seen_load_directive_count.load() == 0) {
+		MAIN_TIME_SECTION("check cached build (pre-semantic check)");
+		if (try_cached_build(checker, args)) {
+			goto end_of_code_gen;
+		}
+	}
+
+	MAIN_TIME_SECTION("type check");
 	check_parsed_files(checker);
 	check_defines(&build_context, checker);
 	if (any_errors()) {
@@ -3207,6 +3346,13 @@ int main(int arg_count, char const **arg_ptr) {
 		return 0;
 	}
 
+	if (build_context.cached) {
+		MAIN_TIME_SECTION("check cached build");
+		if (try_cached_build(checker, args)) {
+			goto end_of_code_gen;
+		}
+	}
+
 #if ALLOW_TILDE
 	if (build_context.tilde_backend) {
 		LinkerData linker_data = {};
@@ -3226,7 +3372,7 @@ int main(int arg_count, char const **arg_ptr) {
 				}
 
 				if (build_context.export_dependencies_format != DependenciesExportUnspecified) {
-					export_dependencies(parser);
+					export_dependencies(checker);
 				}
 				return result;
 			}
@@ -3235,11 +3381,16 @@ int main(int arg_count, char const **arg_ptr) {
 	} else
 #endif
 	{
-		MAIN_TIME_SECTION("LLVM API Code Gen");
 		lbGenerator *gen = gb_alloc_item(permanent_allocator(), lbGenerator);
 		if (!lb_init_generator(gen, checker)) {
 			return 1;
 		}
+
+		gbString label_code_gen = gb_string_make(heap_allocator(), "LLVM API Code Gen");
+		if (gen->modules.count > 1) {
+			label_code_gen = gb_string_append_fmt(label_code_gen, " ( %4td modules )", gen->modules.count);
+		}
+		MAIN_TIME_SECTION_WITH_LEN(label_code_gen, gb_string_length(label_code_gen));
 		if (lb_generate_code(gen)) {
 			switch (build_context.build_mode) {
 			case BuildMode_Executable:
@@ -3252,7 +3403,7 @@ int main(int arg_count, char const **arg_ptr) {
 					}
 
 					if (build_context.export_dependencies_format != DependenciesExportUnspecified) {
-						export_dependencies(parser);
+						export_dependencies(checker);
 					}
 					return result;
 				}
@@ -3263,19 +3414,27 @@ int main(int arg_count, char const **arg_ptr) {
 		remove_temp_files(gen);
 	}
 
+end_of_code_gen:;
+
 	if (build_context.show_timings) {
 		show_timings(checker, &global_timings);
 	}
 
 	if (build_context.export_dependencies_format != DependenciesExportUnspecified) {
-		export_dependencies(parser);
+		export_dependencies(checker);
+	}
+
+
+	if (!build_context.build_cache_data.copy_already_done &&
+	    build_context.cached) {
+		try_copy_executable_to_cache();
 	}
 
 	if (run_output) {
 		String exe_name = path_to_string(heap_allocator(), build_context.build_paths[BuildPath_Output]);
 		defer (gb_free(heap_allocator(), exe_name.text));
 
-		return system_exec_command_line_app("odin run", "\"%.*s\" %.*s", LIT(exe_name), LIT(run_args_string));
+		system_must_exec_command_line_app("odin run", "\"%.*s\" %.*s", LIT(exe_name), LIT(run_args_string));
 	}
 	return 0;
 }
