@@ -14,7 +14,7 @@ TIMEOUT_INFINITE :: time.MIN_DURATION // Note(flysand): Any negative duration wi
 */
 args := get_args()
 
-@(private="file", require_results)
+@(private="file")
 get_args :: proc() -> []string {
 	result := make([]string, len(runtime.args__), heap_allocator())
 	for rt_arg, i in runtime.args__ {
@@ -131,6 +131,8 @@ Process_Info_Field :: enum {
 	Working_Dir,
 }
 
+ALL_INFO :: Process_Info_Fields{.Executable_Path, .PPid, .Priority, .Command_Line, .Command_Args, .Environment, .Username, .Working_Dir}
+
 /*
 	Contains information about the process as obtained by the `process_info()`
 	procedure.
@@ -164,15 +166,15 @@ Process_Info :: struct {
 
 	This procedure obtains an information, specified by `selection` parameter of
 	a process given by `pid`.
-	
-	Use `free_process_info` to free the memory allocated by this procedure. In
-	case the function returns an error all temporary allocations would be freed
-	and as such, calling `free_process_info()` is not needed.
+
+	Use `free_process_info` to free the memory allocated by this procedure. The
+	`free_process_info` procedure needs to be called, even if this procedure
+	returned an error, as some of the fields may have been allocated.
 
 	**Note**: The resulting information may or may contain the fields specified
 	by the `selection` parameter. Always check whether the returned
 	`Process_Info` struct has the required fields before checking the error code
-	returned by this function.
+	returned by this procedure.
 */
 @(require_results)
 process_info_by_pid :: proc(pid: int, selection: Process_Info_Fields, allocator: runtime.Allocator) -> (Process_Info, Error) {
@@ -186,14 +188,14 @@ process_info_by_pid :: proc(pid: int, selection: Process_Info_Fields, allocator:
 	about a process that has been opened by the application, specified in
 	the `process` parameter.
 
-	Use `free_process_info` to free the memory allocated by this procedure. In
-	case the function returns an error, all temporary allocations would be freed
-	and as such, calling `free_process_info` is not needed.
+	Use `free_process_info` to free the memory allocated by this procedure. The
+	`free_process_info` procedure needs to be called, even if this procedure
+	returned an error, as some of the fields may have been allocated.
 
 	**Note**: The resulting information may or may contain the fields specified
 	by the `selection` parameter. Always check whether the returned
 	`Process_Info` struct has the required fields before checking the error code
-	returned by this function.
+	returned by this procedure.
 */
 @(require_results)
 process_info_by_handle :: proc(process: Process, selection: Process_Info_Fields, allocator: runtime.Allocator) -> (Process_Info, Error) {
@@ -206,14 +208,14 @@ process_info_by_handle :: proc(process: Process, selection: Process_Info_Fields,
 	This procedure obtains the information, specified by `selection` parameter
 	about the currently running process.
 
-	Use `free_process_info` to free the memory allocated by this function. In
-	case this function returns an error, all temporary allocations would be
-	freed and as such calling `free_process_info()` is not needed.
+	Use `free_process_info` to free the memory allocated by this procedure. The
+	`free_process_info` procedure needs to be called, even if this procedure
+	returned an error, as some of the fields may have been allocated.
 
 	**Note**: The resulting information may or may contain the fields specified
 	by the `selection` parameter. Always check whether the returned
 	`Process_Info` struct has the required fields before checking the error code
-	returned by this function.
+	returned by this procedure.
 */
 @(require_results)
 current_process_info :: proc(selection: Process_Info_Fields, allocator: runtime.Allocator) -> (Process_Info, Error) {
@@ -239,12 +241,16 @@ process_info :: proc {
 free_process_info :: proc(pi: Process_Info, allocator: runtime.Allocator) {
 	delete(pi.executable_path, allocator)
 	delete(pi.command_line, allocator)
+	for a in pi.command_args {
+		delete(a, allocator)
+	}
 	delete(pi.command_args, allocator)
 	for s in pi.environment {
 		delete(s, allocator)
 	}
 	delete(pi.environment, allocator)
 	delete(pi.working_dir, allocator)
+	delete(pi.username, allocator)
 }
 
 /*
@@ -299,6 +305,7 @@ Process_Desc :: struct {
 	// A slice of strings, each having the format `KEY=VALUE` representing the
 	// full environment that the child process will receive.
 	// In case this slice is `nil`, the current process' environment is used.
+	// NOTE(laytan): maybe should be `Maybe([]string)` so you can do `nil` == current env, empty == empty/no env.
 	env: []string,
 	// The `stderr` handle to give to the child process. It can be either a file
 	// or a writeable end of a pipe. Passing `nil` will shut down the process'

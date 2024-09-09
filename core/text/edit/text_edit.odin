@@ -1,10 +1,9 @@
-package text_edit
-
 /*
-	Based off the articles by rxi:
-		* https://rxi.github.io/textbox_behaviour.html
-		* https://rxi.github.io/a_simple_undo_system.html
+Based off the articles by rxi:
+- [[ https://rxi.github.io/textbox_behaviour.html ]]
+- [[ https://rxi.github.io/a_simple_undo_system.html ]]
 */
+package text_edit
 
 import "base:runtime"
 import "core:time"
@@ -137,7 +136,7 @@ clear_all :: proc(s: ^State) -> (cleared: bool) {
 
 // push current text state to the wanted undo|redo stack
 undo_state_push :: proc(s: ^State, undo: ^[dynamic]^Undo_State) -> mem.Allocator_Error {
-	if s.builder != nil {
+	if s.builder == nil {
 		return nil
 	}
 	text := string(s.builder.buf[:])

@@ -115,7 +115,11 @@ open :: proc(name: string, flags := File_Flags{.Read}, perm := 0o777) -> (^File,
 
 @(require_results)
 new_file :: proc(handle: uintptr, name: string) -> ^File {
-	return _new_file(handle, name) or_else panic("Out of memory")
+	file, err := _new_file(handle, name)
+	if err != nil {
+		panic(error_string(err))
+	}
+	return file
 }
 
 @(require_results)
@@ -128,6 +132,12 @@ name :: proc(f: ^File) -> string {
 	return _name(f)
 }
 
+/*
+	Close a file and its stream.
+
+	Any further use of the file or its stream should be considered to be in the
+	same class of bugs as a use-after-free.
+*/
 close :: proc(f: ^File) -> Error {
 	if f != nil {
 		return io.close(f.stream)

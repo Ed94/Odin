@@ -345,10 +345,32 @@ Obtain the time components from a time, a duration or a stopwatch's total.
 clock :: proc { clock_from_time, clock_from_duration, clock_from_stopwatch }
 
 /*
+Obtain the time components from a time, a duration or a stopwatch's total, including nanoseconds.
+*/
+precise_clock :: proc { precise_clock_from_time, precise_clock_from_duration, precise_clock_from_stopwatch }
+
+/*
 Obtain the time components from a time.
 */
 clock_from_time :: proc "contextless" (t: Time) -> (hour, min, sec: int) {
-	return clock_from_seconds(_time_abs(t))
+	hour, min, sec, _ = precise_clock_from_time(t)
+	return
+}
+
+/*
+Obtain the time components from a time, including nanoseconds.
+*/
+precise_clock_from_time :: proc "contextless" (t: Time) -> (hour, min, sec, nanos: int) {
+	// Time in nanoseconds since 1-1-1970 00:00
+	_sec, _nanos := t._nsec / 1e9, t._nsec % 1e9
+	_sec += INTERNAL_TO_ABSOLUTE
+	nanos = int(_nanos)
+	sec   = int(_sec  % SECONDS_PER_DAY)
+	hour  = sec  / SECONDS_PER_HOUR
+	sec  -= hour * SECONDS_PER_HOUR
+	min   = sec  / SECONDS_PER_MINUTE
+	sec  -= min  * SECONDS_PER_MINUTE
+	return
 }
 
 /*
@@ -359,6 +381,13 @@ clock_from_duration :: proc "contextless" (d: Duration) -> (hour, min, sec: int)
 }
 
 /*
+Obtain the time components from a duration, including nanoseconds.
+*/
+precise_clock_from_duration :: proc "contextless" (d: Duration) -> (hour, min, sec, nanos: int) {
+	return precise_clock_from_time({_nsec=i64(d)})
+}
+
+/*
 Obtain the time components from a stopwatch's total.
 */
 clock_from_stopwatch :: proc "contextless" (s: Stopwatch) -> (hour, min, sec: int) {
@@ -366,10 +395,17 @@ clock_from_stopwatch :: proc "contextless" (s: Stopwatch) -> (hour, min, sec: in
 }
 
 /*
+Obtain the time components from a stopwatch's total, including nanoseconds
+*/
+precise_clock_from_stopwatch :: proc "contextless" (s: Stopwatch) -> (hour, min, sec, nanos: int) {
+	return precise_clock_from_duration(stopwatch_duration(s))
+}
+
+/*
 Obtain the time components from the number of seconds.
 */
-clock_from_seconds :: proc "contextless" (nsec: u64) -> (hour, min, sec: int) {
-	sec = int(nsec % SECONDS_PER_DAY)
+clock_from_seconds :: proc "contextless" (in_sec: u64) -> (hour, min, sec: int) {
+	sec = int(in_sec % SECONDS_PER_DAY)
 	hour = sec / SECONDS_PER_HOUR
 	sec -= hour * SECONDS_PER_HOUR
 	min = sec / SECONDS_PER_MINUTE
@@ -896,24 +932,45 @@ as the second return value. See `Time` for the representable range.
 compound_to_time :: proc "contextless" (datetime: dt.DateTime) -> (t: Time, ok: bool) {
 	unix_epoch := dt.DateTime{{1970, 1, 1}, {0, 0, 0, 0}}
 	delta, err := dt.sub(datetime, unix_epoch)
-	ok = err == .None
+	if err != .None {
+		return
+	}
 
-	seconds     := delta.days    * 86_400 + delta.seconds
-	nanoseconds := i128(seconds) * 1e9    + i128(delta.nanos)
-
+	seconds := delta.days * 86_400 + delta.seconds
 	// Can this moment be represented in i64 worth of nanoseconds?
 	// min(Time): 1677-09-21 00:12:44.145224192 +0000 UTC
 	// max(Time): 2262-04-11 23:47:16.854775807 +0000 UTC
-	if nanoseconds < i128(min(i64)) || nanoseconds > i128(max(i64)) {
+	if seconds < -9223372036 || (seconds == -9223372036 && delta.nanos < -854775808) {
 		return {}, false
 	}
-	return Time{_nsec=i64(nanoseconds)}, true
+	if seconds > 9223372036 || (seconds == 9223372036 && delta.nanos > 854775807) {
+		return {}, false
+	}
+	return Time{_nsec=seconds * 1e9 + delta.nanos}, true
 }
 
 /*
 Convert datetime components into time.
 */
 datetime_to_time :: proc{components_to_time, compound_to_time}
+
+/*
+Convert time into datetime.
+*/
+time_to_datetime :: proc "contextless" (t: Time) -> (dt.DateTime, bool) {
+	unix_epoch := dt.DateTime{{1970, 1, 1}, {0, 0, 0, 0}}
+
+	datetime, err := dt.add(unix_epoch, dt.Delta{ nanos = t._nsec })
+	if err != .None {
+		return {}, false
+	}
+	return datetime, true
+}
+
+/*
+Alias for `time_to_datetime`.
+*/
+time_to_compound :: time_to_datetime
 
 /*
 Check if a year is a leap year.

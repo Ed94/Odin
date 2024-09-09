@@ -9,6 +9,7 @@ download_assets :: proc() {
 	}
 }
 
+@(require) import "bytes"
 @(require) import "c/libc"
 @(require) import "compress"
 @(require) import "container"
@@ -22,6 +23,7 @@ download_assets :: proc() {
 @(require) import "encoding/xml"
 @(require) import "flags"
 @(require) import "fmt"
+@(require) import "io"
 @(require) import "math"
 @(require) import "math/big"
 @(require) import "math/linalg/glsl"
@@ -37,9 +39,11 @@ download_assets :: proc() {
 @(require) import "slice"
 @(require) import "strconv"
 @(require) import "strings"
+@(require) import "sys/posix"
 @(require) import "sys/windows"
 @(require) import "text/i18n"
 @(require) import "text/match"
+@(require) import "text/regex"
 @(require) import "thread"
 @(require) import "time"
 @(require) import "unicode"

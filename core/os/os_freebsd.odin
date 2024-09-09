@@ -6,6 +6,7 @@ foreign import libc "system:c"
 import "base:runtime"
 import "core:strings"
 import "core:c"
+import "core:sys/freebsd"
 
 Handle :: distinct i32
 File_Time :: distinct u64
@@ -371,7 +372,7 @@ F_KINFO :: 22
 foreign libc {
 	@(link_name="__error")		__Error_location :: proc() -> ^c.int ---
 
-	@(link_name="open")             _unix_open          :: proc(path: cstring, flags: c.int, mode: c.int) -> Handle ---
+	@(link_name="open")             _unix_open          :: proc(path: cstring, flags: c.int, #c_vararg mode: ..u16) -> Handle ---
 	@(link_name="close")            _unix_close         :: proc(fd: Handle) -> c.int ---
 	@(link_name="read")             _unix_read          :: proc(fd: Handle, buf: rawptr, size: c.size_t) -> c.ssize_t ---
 	@(link_name="write")            _unix_write         :: proc(fd: Handle, buf: rawptr, size: c.size_t) -> c.ssize_t ---
@@ -388,7 +389,8 @@ foreign libc {
 	@(link_name="unlink")           _unix_unlink        :: proc(path: cstring) -> c.int ---
 	@(link_name="rmdir")            _unix_rmdir         :: proc(path: cstring) -> c.int ---
 	@(link_name="mkdir")            _unix_mkdir         :: proc(path: cstring, mode: mode_t) -> c.int ---
-	@(link_name="fcntl")            _unix_fcntl         :: proc(fd: Handle, cmd: c.int, arg: uintptr) -> c.int ---
+	@(link_name="fcntl")            _unix_fcntl         :: proc(fd: Handle, cmd: c.int, #c_vararg args: ..any) -> c.int ---
+	@(link_name="dup")              _unix_dup           :: proc(fd: Handle) -> Handle ---
 	
 	@(link_name="fdopendir")        _unix_fdopendir     :: proc(fd: Handle) -> Dir ---
 	@(link_name="closedir")         _unix_closedir      :: proc(dirp: Dir) -> c.int ---
@@ -401,7 +403,7 @@ foreign libc {
 	@(link_name="realloc")          _unix_realloc       :: proc(ptr: rawptr, size: c.size_t) -> rawptr ---
 	
 	@(link_name="getenv")           _unix_getenv        :: proc(cstring) -> cstring ---
-	@(link_name="realpath")         _unix_realpath      :: proc(path: cstring, resolved_path: rawptr) -> rawptr ---
+	@(link_name="realpath")         _unix_realpath      :: proc(path: cstring, resolved_path: [^]byte = nil) -> cstring ---
 	@(link_name="sysctlbyname")     _sysctlbyname       :: proc(path: cstring, oldp: rawptr, oldlenp: rawptr, newp: rawptr, newlen: int) -> c.int ---
 
 	@(link_name="exit")             _unix_exit          :: proc(status: c.int) -> ! ---
@@ -429,7 +431,7 @@ get_last_error :: proc "contextless" () -> Error {
 open :: proc(path: string, flags: int = O_RDONLY, mode: int = 0) -> (Handle, Error) {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	cstr := strings.clone_to_cstring(path, context.temp_allocator)
-	handle := _unix_open(cstr, c.int(flags), c.int(mode))
+	handle := _unix_open(cstr, c.int(flags), u16(mode))
 	if handle == -1 {
 		return INVALID_HANDLE, get_last_error()
 	}
@@ -445,8 +447,7 @@ close :: proc(fd: Handle) -> Error {
 }
 
 flush :: proc(fd: Handle) -> Error {
-	// do nothing
-	return nil
+	return cast(_Platform_Error)freebsd.fsync(cast(freebsd.Fd)fd)
 }
 
 // If you read or write more than `INT_MAX` bytes, FreeBSD returns `EINVAL`.
@@ -480,29 +481,45 @@ write :: proc(fd: Handle, data: []byte) -> (int, Error) {
 }
 
 read_at :: proc(fd: Handle, data: []byte, offset: i64) -> (n: int, err: Error) {
-	curr := seek(fd, offset, SEEK_CUR) or_return
-	n, err = read(fd, data)
-	_, err1 := seek(fd, curr, SEEK_SET)
-	if err1 != nil && err == nil {
-		err = err1
+	if len(data) == 0 {
+		return 0, nil
 	}
-	return
+
+	to_read := min(uint(len(data)), MAX_RW)
+
+	bytes_read, errno := freebsd.pread(cast(freebsd.Fd)fd, data[:to_read], cast(freebsd.off_t)offset)
+
+	return bytes_read, cast(_Platform_Error)errno
 }
 
 write_at :: proc(fd: Handle, data: []byte, offset: i64) -> (n: int, err: Error) {
-	curr := seek(fd, offset, SEEK_CUR) or_return
-	n, err = write(fd, data)
-	_, err1 := seek(fd, curr, SEEK_SET)
-	if err1 != nil && err == nil {
-		err = err1
+	if len(data) == 0 {
+		return 0, nil
 	}
-	return
+
+	to_write := min(uint(len(data)), MAX_RW)
+
+	bytes_written, errno := freebsd.pwrite(cast(freebsd.Fd)fd, data[:to_write], cast(freebsd.off_t)offset)
+
+	return bytes_written, cast(_Platform_Error)errno
 }
 
 seek :: proc(fd: Handle, offset: i64, whence: int) -> (i64, Error) {
+	switch whence {
+	case SEEK_SET, SEEK_CUR, SEEK_END:
+		break
+	case:
+		return 0, .Invalid_Whence
+	}
 	res := _unix_seek(fd, offset, c.int(whence))
 	if res == -1 {
-		return -1, get_last_error()
+		errno := get_last_error()
+		switch errno {
+		case .EINVAL:
+			return 0, .Invalid_Offset
+		case:
+			return 0, errno
+		}
 	}
 	return res, nil
 }
@@ -739,6 +756,15 @@ _readlink :: proc(path: string) -> (string, Error) {
 	return "", Error{}
 }
 
+@(private, require_results)
+_dup :: proc(fd: Handle) -> (Handle, Error) {
+	dup := _unix_dup(fd)
+	if dup == -1 {
+		return INVALID_HANDLE, get_last_error()
+	}
+	return dup, nil
+}
+
 @(require_results)
 absolute_path_from_handle :: proc(fd: Handle) -> (string, Error) {
 	// NOTE(Feoramund): The situation isn't ideal, but this was the best way I
@@ -776,10 +802,10 @@ absolute_path_from_relative :: proc(rel: string) -> (path: string, err: Error) {
 	if path_ptr == nil {
 		return "", get_last_error()
 	}
-	defer _unix_free(path_ptr)
+	defer _unix_free(rawptr(path_ptr))
 
 
-	path = strings.clone(string(cstring(path_ptr)))
+	path = strings.clone(string(path_ptr))
 
 	return path, nil
 }

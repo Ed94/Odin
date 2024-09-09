@@ -590,7 +590,7 @@ Channel :: enum u8 {
 
 // Take a slice of pixels (`[]RGBA_Pixel`, etc), and return an `Image`
 // Don't call `destroy` on the resulting `Image`. Instead, delete the original `pixels` slice.
-pixels_to_image :: proc(pixels: [][$N]$E, width: int, height: int) -> (img: Image, ok: bool) where E == u8 || E == u16, N >= 1 && N <= 4 {
+pixels_to_image :: proc(pixels: [][$N]$E, width: int, height: int) -> (img: Image, ok: bool) where E == u8 || E == u16, N >= 1, N <= 4 {
 	if len(pixels) != width * height {
 		return {}, false
 	}
@@ -1293,7 +1293,7 @@ blend_single_channel :: #force_inline proc(fg, alpha, bg: $T) -> (res: T) where 
 	return T(c & (MAX - 1))
 }
 
-blend_pixel :: #force_inline proc(fg: [$N]$T, alpha: T, bg: [N]T) -> (res: [N]T) where (T == u8 || T == u16), N >= 1 && N <= 4 {
+blend_pixel :: #force_inline proc(fg: [$N]$T, alpha: T, bg: [N]T) -> (res: [N]T) where (T == u8 || T == u16), N >= 1, N <= 4 {
 	MAX :: 256 when T == u8 else 65536
 
 	when N == 1 {
@@ -1393,6 +1393,7 @@ expand_grayscale :: proc(img: ^Image, allocator := context.allocator) -> (ok: bo
 			for p in inp {
 				out[0].rgb = p.r // Gray component.
 				out[0].a   = p.g // Alpha component.
+				out    = out[1:]
 			}
 
 		case:
@@ -1417,6 +1418,7 @@ expand_grayscale :: proc(img: ^Image, allocator := context.allocator) -> (ok: bo
 			for p in inp {
 				out[0].rgb = p.r // Gray component.
 				out[0].a   = p.g // Alpha component.
+				out    = out[1:]
 			}
 
 		case:

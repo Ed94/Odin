@@ -1438,6 +1438,15 @@ parse_stmt :: proc(p: ^Parser) -> ^ast.Stmt {
 				stmt.state_flags += {.No_Bounds_Check}
 			}
 			return stmt
+		case "type_assert", "no_type_assert":
+			stmt := parse_stmt(p)
+			switch name {
+			case "type_assert":
+				stmt.state_flags += {.Type_Assert}
+			case "no_type_assert":
+				stmt.state_flags += {.No_Type_Assert}
+			}
+			return stmt
 		case "partial":
 			stmt := parse_stmt(p)
 			#partial switch s in stmt.derived_stmt {
@@ -2832,11 +2841,17 @@ parse_operand :: proc(p: ^Parser, lhs: bool) -> ^ast.Expr {
 			expect_token(p, .Or)
 			bit_size := parse_expr(p, true)
 
+			tag: tokenizer.Token
+			if p.curr_tok.kind == .String {
+				tag = expect_token(p, .String)
+			}
+
 			field := ast.new(ast.Bit_Field_Field, name.pos, bit_size)
 
 			field.name     = name
 			field.type     = type
 			field.bit_size = bit_size
+			field.tag      = tag
 
 			append(&fields, field)
 
@@ -2845,7 +2860,7 @@ parse_operand :: proc(p: ^Parser, lhs: bool) -> ^ast.Expr {
 
 		close := expect_closing_brace_of_field_list(p)
 
-		bf := ast.new(ast.Bit_Field_Type, tok.pos, close.pos)
+		bf := ast.new(ast.Bit_Field_Type, tok.pos, end_pos(close))
 
 		bf.tok_pos      = tok.pos
 		bf.backing_type = backing_type

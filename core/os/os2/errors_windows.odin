@@ -5,6 +5,8 @@ import "base:runtime"
 import "core:slice"
 import win32 "core:sys/windows"
 
+_Platform_Error :: win32.System_Error
+
 _error_string :: proc(errno: i32) -> string {
 	e := win32.DWORD(errno)
 	if e == 0 {
@@ -49,6 +51,9 @@ _get_platform_error :: proc() -> Error {
 
 	case win32.ERROR_INVALID_HANDLE:
 		return .Invalid_File
+
+	case win32.ERROR_NEGATIVE_SEEK:
+		return .Invalid_Offset
 
 	case
 		win32.ERROR_BAD_ARGUMENTS,

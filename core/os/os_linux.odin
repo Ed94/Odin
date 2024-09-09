@@ -7,7 +7,6 @@ import "base:runtime"
 import "core:strings"
 import "core:c"
 import "core:strconv"
-import "base:intrinsics"
 
 // NOTE(flysand): For compatibility we'll make core:os package
 // depend on the old (scheduled for removal) linux package.
@@ -263,7 +262,7 @@ Unix_File_Time :: struct {
 	nanoseconds: i64,
 }
 
-when ODIN_ARCH == .arm64 {
+when ODIN_ARCH == .arm64 || ODIN_ARCH == .riscv64 {
 	OS_Stat :: struct {
 		device_id:     u64, // ID of device containing file
 		serial:        u64, // File serial number
@@ -396,9 +395,9 @@ SIOCGIFFLAG :: enum c.int {
 	PORTSEL        = 13, /* Can set media type.  */
 	AUTOMEDIA      = 14, /* Auto media select active.  */
 	DYNAMIC        = 15, /* Dialup device with changing addresses.  */
-        LOWER_UP       = 16,
-        DORMANT        = 17,
-        ECHO           = 18,
+	LOWER_UP       = 16,
+	DORMANT        = 17,
+	ECHO           = 18,
 }
 SIOCGIFFLAGS :: bit_set[SIOCGIFFLAG; c.int]
 
@@ -492,7 +491,7 @@ foreign libc {
 	@(link_name="getenv")           _unix_getenv        :: proc(cstring) -> cstring ---
 	@(link_name="putenv")           _unix_putenv        :: proc(cstring) -> c.int ---
 	@(link_name="setenv")           _unix_setenv        :: proc(key: cstring, value: cstring, overwrite: c.int) -> c.int ---
-	@(link_name="realpath")         _unix_realpath      :: proc(path: cstring, resolved_path: rawptr) -> rawptr ---
+	@(link_name="realpath")         _unix_realpath      :: proc(path: cstring, resolved_path: [^]byte = nil) -> cstring ---
 
 	@(link_name="exit")             _unix_exit          :: proc(status: c.int) -> ! ---
 }
@@ -585,8 +584,7 @@ close :: proc(fd: Handle) -> Error {
 }
 
 flush :: proc(fd: Handle) -> Error {
-	// do nothing
-	return nil
+	return _get_errno(unix.sys_fsync(int(fd)))
 }
 
 // If you read or write more than `SSIZE_MAX` bytes, result is implementation defined (probably an error).
@@ -655,9 +653,20 @@ write_at :: proc(fd: Handle, data: []byte, offset: i64) -> (int, Error) {
 }
 
 seek :: proc(fd: Handle, offset: i64, whence: int) -> (i64, Error) {
+	switch whence {
+	case SEEK_SET, SEEK_CUR, SEEK_END:
+		break
+	case:
+		return 0, .Invalid_Whence
+	}
 	res := unix.sys_lseek(int(fd), offset, whence)
 	if res < 0 {
-		return -1, _get_errno(int(res))
+		errno := _get_errno(int(res))
+		switch errno {
+		case .EINVAL:
+			return 0, .Invalid_Offset
+		}
+		return 0, errno
 	}
 	return i64(res), nil
 }
@@ -887,6 +896,12 @@ _readlink :: proc(path: string) -> (string, Error) {
 	}
 }
 
+@(private, require_results)
+_dup :: proc(fd: Handle) -> (Handle, Error) {
+	dup, err := linux.dup(linux.Fd(fd))
+	return Handle(dup), err
+}
+
 @(require_results)
 absolute_path_from_handle :: proc(fd: Handle) -> (string, Error) {
 	buf : [256]byte
@@ -912,9 +927,9 @@ absolute_path_from_relative :: proc(rel: string) -> (path: string, err: Error) {
 	if path_ptr == nil {
 		return "", get_last_error()
 	}
-	defer _unix_free(path_ptr)
+	defer _unix_free(rawptr(path_ptr))
 
-	path = strings.clone(string(cstring(path_ptr)))
+	path = strings.clone(string(path_ptr))
 
 	return path, nil
 }

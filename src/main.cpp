@@ -389,6 +389,7 @@ enum BuildFlagKind {
 	BuildFlag_PrintLinkerFlags,
 
 	// internal use only
+	BuildFlag_InternalFastISel,
 	BuildFlag_InternalIgnoreLazy,
 	BuildFlag_InternalIgnoreLLVMBuild,
 	BuildFlag_InternalIgnorePanic,
@@ -594,6 +595,7 @@ gb_internal bool parse_build_flags(Array<String> args) {
 
 	add_flag(&build_flags, BuildFlag_PrintLinkerFlags,        str_lit("print-linker-flags"),        BuildFlagParam_None,    Command_build);
 
+	add_flag(&build_flags, BuildFlag_InternalFastISel,        str_lit("internal-fast-isel"),        BuildFlagParam_None,    Command_all);
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLazy,      str_lit("internal-ignore-lazy"),      BuildFlagParam_None,    Command_all);
 	add_flag(&build_flags, BuildFlag_InternalIgnoreLLVMBuild, str_lit("internal-ignore-llvm-build"),BuildFlagParam_None,    Command_all);
 	add_flag(&build_flags, BuildFlag_InternalIgnorePanic,     str_lit("internal-ignore-panic"),     BuildFlagParam_None,    Command_all);
@@ -1408,6 +1410,9 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							build_context.print_linker_flags = true;
 							break;
 
+						case BuildFlag_InternalFastISel:
+							build_context.fast_isel = true;
+							break;
 						case BuildFlag_InternalIgnoreLazy:
 							build_context.ignore_lazy = true;
 							break;
@@ -2268,6 +2273,7 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(2, "Sets the build mode.");
 		print_usage_line(2, "Available options:");
 		print_usage_line(3, "-build-mode:exe         Builds as an executable.");
+		print_usage_line(3, "-build-mode:test        Builds as an executable that executes tests.");
 		print_usage_line(3, "-build-mode:dll         Builds as a dynamically linked library.");
 		print_usage_line(3, "-build-mode:shared      Builds as a dynamically linked library.");
 		print_usage_line(3, "-build-mode:lib         Builds as a statically linked library.");
@@ -2973,13 +2979,19 @@ int main(int arg_count, char const **arg_ptr) {
 				break;
 			}
 		}
-		if(run_args_start_idx != -1) {
+		if (run_args_start_idx != -1) {
 			last_non_run_arg = run_args_start_idx;
+
+			if (run_args_start_idx == 2) {
+				// missing src path on argv[2], invocation: odin [run|test] --
+				usage(args[0]);
+				return 1;
+			}
+
 			for(isize i = run_args_start_idx+1; i < args.count; ++i) {
 				array_add(&run_args, args[i]);
 			}
 		}
-
 		args = array_slice(args, 0, last_non_run_arg);
 		run_args_string = string_join_and_quote(heap_allocator(), run_args);
 
@@ -3237,6 +3249,21 @@ int main(int arg_count, char const **arg_ptr) {
 
 			string_set_add(&build_context.target_features_set, item);
 		}
+	}
+
+	// NOTE(laytan): on riscv64 we want to enforce some features.
+	if (build_context.metrics.arch == TargetArch_riscv64) {
+		String disabled;
+		if (!check_target_feature_is_enabled(str_lit("64bit,f,d,m"), &disabled)) { // 64bit, floats, doubles, integer multiplication.
+			gb_printf_err("missing required target feature: \"%.*s\", enable it by setting a different -microarch or explicitly adding it through -target-features\n", LIT(disabled));
+			gb_exit(1);
+		}
+
+		// NOTE(laytan): some weird errors on LLVM 14 that LLVM 17 fixes.
+		if (LLVM_VERSION_MAJOR < 17) {
+			gb_printf_err("Invalid LLVM version %s, RISC-V targets require at least LLVM 17\n", LLVM_VERSION_STRING);
+			gb_exit(1);
+		} 
 	}
 
 	if (build_context.show_debug_messages) {

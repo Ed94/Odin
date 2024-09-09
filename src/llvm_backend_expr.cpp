@@ -136,6 +136,11 @@ gb_internal lbValue lb_emit_unary_arith(lbProcedure *p, TokenKind op, lbValue x,
 			switch (op) {
 			case Token_Xor:
 				opv = LLVMBuildNot(p->builder, v, "");
+				if (is_type_bit_set(elem_type)) {
+					ExactValue ev_mask = exact_bit_set_all_set_mask(elem_type);
+					lbValue mask = lb_const_value(p->module, elem_type, ev_mask);
+					opv = LLVMBuildAnd(p->builder, opv, mask.value, "");
+				}
 				break;
 			case Token_Sub:
 				if (is_type_float(elem_type)) {
@@ -176,8 +181,14 @@ gb_internal lbValue lb_emit_unary_arith(lbProcedure *p, TokenKind op, lbValue x,
 
 	if (op == Token_Xor) {
 		lbValue cmp = {};
-		cmp.value = LLVMBuildNot(p->builder, x.value, "");
 		cmp.type = x.type;
+		if (is_type_bit_set(x.type)) {
+			ExactValue ev_mask = exact_bit_set_all_set_mask(x.type);
+			lbValue mask = lb_const_value(p->module, x.type, ev_mask);
+			cmp.value = LLVMBuildXor(p->builder, x.value, mask.value, "");
+		} else {
+			cmp.value = LLVMBuildNot(p->builder, x.value, "");
+		}
 		return lb_emit_conv(p, cmp, type);
 	}
 
@@ -694,31 +705,37 @@ gb_internal lbValue lb_emit_matrix_flatten(lbProcedure *p, lbValue m, Type *type
 
 	lbAddr res = lb_add_local_generated(p, type, true);
 
-	i64 row_count = mt->Matrix.row_count;
-	i64 column_count = mt->Matrix.column_count;
-	TEMPORARY_ALLOCATOR_GUARD();
+	GB_ASSERT(type_size_of(type) == type_size_of(m.type));
 
-	auto srcs = array_make<lbValue>(temporary_allocator(), 0, row_count*column_count);
-	auto dsts = array_make<lbValue>(temporary_allocator(), 0, row_count*column_count);
+	lbValue m_ptr = lb_address_from_load_or_generate_local(p, m);
+	lbValue n = lb_const_int(p->module, t_int, type_size_of(type));
+	lb_mem_copy_non_overlapping(p, res.addr, m_ptr, n);
 
-	for (i64 j = 0; j < column_count; j++) {
-		for (i64 i = 0; i < row_count; i++) {
-			lbValue src = lb_emit_matrix_ev(p, m, i, j);
-			array_add(&srcs, src);
-		}
-	}
+	// i64 row_count = mt->Matrix.row_count;
+	// i64 column_count = mt->Matrix.column_count;
+	// TEMPORARY_ALLOCATOR_GUARD();
 
-	for (i64 j = 0; j < column_count; j++) {
-		for (i64 i = 0; i < row_count; i++) {
-			lbValue dst = lb_emit_array_epi(p, res.addr, i + j*row_count);
-			array_add(&dsts, dst);
-		}
-	}
+	// auto srcs = array_make<lbValue>(temporary_allocator(), 0, row_count*column_count);
+	// auto dsts = array_make<lbValue>(temporary_allocator(), 0, row_count*column_count);
 
-	GB_ASSERT(srcs.count == dsts.count);
-	for_array(i, srcs) {
-		lb_emit_store(p, dsts[i], srcs[i]);
-	}
+	// for (i64 j = 0; j < column_count; j++) {
+	// 	for (i64 i = 0; i < row_count; i++) {
+	// 		lbValue src = lb_emit_matrix_ev(p, m, i, j);
+	// 		array_add(&srcs, src);
+	// 	}
+	// }
+
+	// for (i64 j = 0; j < column_count; j++) {
+	// 	for (i64 i = 0; i < row_count; i++) {
+	// 		lbValue dst = lb_emit_array_epi(p, res.addr, i + j*row_count);
+	// 		array_add(&dsts, dst);
+	// 	}
+	// }
+
+	// GB_ASSERT(srcs.count == dsts.count);
+	// for_array(i, srcs) {
+	// 	lb_emit_store(p, dsts[i], srcs[i]);
+	// }
 	return lb_addr_load(p, res);
 }
 
@@ -2028,7 +2045,11 @@ gb_internal lbValue lb_emit_conv(lbProcedure *p, lbValue value, Type *t) {
 			} else if (is_type_integer(src_elem) && is_type_boolean(dst_elem)) {
 				LLVMValueRef i1vector = LLVMBuildICmp(p->builder, LLVMIntNE, value.value, LLVMConstNull(LLVMTypeOf(value.value)), "");
 				res.value = LLVMBuildIntCast2(p->builder, i1vector, lb_type(m, t), !is_type_unsigned(src_elem), "");
-			} else {
+			} else if (is_type_pointer(src_elem) && is_type_integer(dst_elem)) {
+				res.value = LLVMBuildPtrToInt(p->builder, value.value, lb_type(m, t), "");
+			} else if (is_type_integer(src_elem) && is_type_pointer(dst_elem)) {
+				res.value = LLVMBuildIntToPtr(p->builder, value.value, lb_type(m, t), "");
+			}else {
 				GB_PANIC("Unhandled simd vector conversion: %s -> %s", type_to_string(src), type_to_string(dst));
 			}
 			return res;
@@ -2463,6 +2484,17 @@ gb_internal lbValue lb_emit_conv(lbProcedure *p, lbValue value, Type *t) {
 	         LIT(p->name));
 
 	return {};
+}
+
+gb_internal lbValue lb_emit_c_vararg(lbProcedure *p, lbValue arg, Type *type) {
+	Type *core = core_type(type);
+	if (core->kind == Type_BitSet) {
+		core = core_type(bit_set_to_int(core));
+		arg  = lb_emit_transmute(p, arg, core);
+	}
+
+	Type *promoted = c_vararg_promote_type(core);
+	return lb_emit_conv(p, arg, promoted);
 }
 
 gb_internal lbValue lb_compare_records(lbProcedure *p, TokenKind op_kind, lbValue left, lbValue right, Type *type) {
@@ -3125,15 +3157,6 @@ gb_internal lbValue lb_emit_comp_against_nil(lbProcedure *p, TokenKind op_kind, 
 	return {};
 }
 
-gb_internal lbValue lb_make_soa_pointer(lbProcedure *p, Type *type, lbValue const &addr, lbValue const &index) {
-	lbAddr v = lb_add_local_generated(p, type, false);
-	lbValue ptr = lb_emit_struct_ep(p, v.addr, 0);
-	lbValue idx = lb_emit_struct_ep(p, v.addr, 1);
-	lb_emit_store(p, ptr, addr);
-	lb_emit_store(p, idx, lb_emit_conv(p, index, t_int));
-
-	return lb_addr_load(p, v);
-}
 
 gb_internal lbValue lb_build_unary_and(lbProcedure *p, Ast *expr) {
 	ast_node(ue, UnaryExpr, expr);
@@ -3739,7 +3762,9 @@ gb_internal lbValue lb_get_using_variable(lbProcedure *p, Entity *e) {
 
 	lbValue v = {};
 
+	bool is_soa = false;
 	if (pv == nullptr && parent->flags & EntityFlag_SoaPtrField) {
+		is_soa = true;
 		// NOTE(bill): using SOA value (probably from for-in statement)
 		lbAddr parent_addr = lb_get_soa_variable_addr(p, parent);
 		v = lb_addr_get_ptr(p, parent_addr);
@@ -3750,7 +3775,7 @@ gb_internal lbValue lb_get_using_variable(lbProcedure *p, Entity *e) {
 		v = lb_build_addr_ptr(p, e->using_expr);
 	}
 	GB_ASSERT(v.value != nullptr);
-	GB_ASSERT_MSG(parent->type == type_deref(v.type), "%s %s", type_to_string(parent->type), type_to_string(v.type));
+	GB_ASSERT_MSG(is_soa || parent->type == type_deref(v.type), "%s %s", type_to_string(parent->type), type_to_string(v.type));
 	lbValue ptr = lb_emit_deep_field_gep(p, v, sel);
 	if (parent->scope) {
 		if ((parent->scope->flags & (ScopeFlag_File|ScopeFlag_Pkg)) == 0) {
@@ -3814,7 +3839,7 @@ gb_internal lbAddr lb_build_array_swizzle_addr(lbProcedure *p, AstCallExpr *ce, 
 	Type *type = base_type(lb_addr_type(addr));
 	GB_ASSERT(type->kind == Type_Array);
 	i64 count = type->Array.count;
-	if (count <= 4) {
+	if (count <= 4 && index_count <= 4) {
 		u8 indices[4] = {};
 		u8 index_count = 0;
 		for (i32 i = 1; i < ce->args.count; i++) {
@@ -5101,8 +5126,9 @@ gb_internal lbAddr lb_build_addr_internal(lbProcedure *p, Ast *expr) {
 					a = lb_addr_get_ptr(p, addr);
 				}
 
-				GB_ASSERT(is_type_array(expr->tav.type) || is_type_simd_vector(expr->tav.type));
-				return lb_addr_swizzle(a, expr->tav.type, swizzle_count, swizzle_indices);
+				Type *type = type_deref(expr->tav.type);
+				GB_ASSERT(is_type_array(type) || is_type_simd_vector(type));
+				return lb_addr_swizzle(a, type, swizzle_count, swizzle_indices);
 			}
 
 			Selection sel = lookup_field(type, selector, false);

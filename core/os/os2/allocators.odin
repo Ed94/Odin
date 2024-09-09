@@ -62,3 +62,7 @@ TEMP_ALLOCATOR_GUARD :: #force_inline proc(loc := #caller_location) -> (runtime.
 	return tmp, loc
 }
 
+@(init, private)
+init_thread_local_cleaner :: proc() {
+	runtime.add_thread_local_cleaner(temp_allocator_fini)
+}

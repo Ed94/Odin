@@ -27,6 +27,8 @@ Proc_Calling_Convention :: union {
 Node_State_Flag :: enum {
 	Bounds_Check,
 	No_Bounds_Check,
+	Type_Assert,
+	No_Type_Assert,
 }
 Node_State_Flags :: distinct bit_set[Node_State_Flag]
 
@@ -861,6 +863,7 @@ Bit_Field_Field :: struct {
 	name:       ^Expr,
 	type:       ^Expr,
 	bit_size:   ^Expr,
+	tag:        tokenizer.Token,
 	comments:   ^Comment_Group,
 }
 
