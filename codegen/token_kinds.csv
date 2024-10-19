@@ -1,6 +1,7 @@
 Invalid, "Invalid"
 EOF,     "EOF"
 Comment, "Comment"
+FileTag, "FileTag"
 
 _LiteralBegin, " "
 	Ident,   "identifier"

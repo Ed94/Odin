@@ -590,7 +590,8 @@ struct StructType {
 	isize         field_count;
 	Ast          *polymorphic_params;
 	Ast          *align;
-	Ast          *field_align;
+	Ast          *min_field_align;
+	Ast          *max_field_align;
 	Token         where_token;
 	Slice<Ast *>  where_clauses;
 	bool          is_packed;
