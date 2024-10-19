@@ -1225,10 +1225,10 @@ gb_internal lbValue lb_emit_arith(lbProcedure *p, TokenKind op, lbValue lhs, lbV
 			lbValue d3 = lb_emit_struct_ep(p, res.addr, 3);
 
 			if (immediate_type != ft) {
-				d0 = lb_emit_conv(p, d0, ft);
-				d1 = lb_emit_conv(p, d1, ft);
-				d2 = lb_emit_conv(p, d2, ft);
-				d3 = lb_emit_conv(p, d3, ft);
+				z0 = lb_emit_conv(p, z0, ft);
+				z1 = lb_emit_conv(p, z1, ft);
+				z2 = lb_emit_conv(p, z2, ft);
+				z3 = lb_emit_conv(p, z3, ft);
 			}
 
 			lb_emit_store(p, d0, z0);
@@ -2555,17 +2555,27 @@ gb_internal lbValue lb_emit_comp(lbProcedure *p, TokenKind op_kind, lbValue left
 
 	if (are_types_identical(a, b)) {
 		// NOTE(bill): No need for a conversion
-	} else if (lb_is_const(left) || lb_is_const_nil(left)) {
+	} else if ((lb_is_const(left) && !is_type_array(left.type)) || lb_is_const_nil(left)) {
+		// NOTE(karl): !is_type_array(left.type) is there to avoid lb_emit_conv
+		// trying to convert a constant array into a non-array. In that case we
+		// want the `else` branch to happen, so it can try to convert the
+		// non-array into an array instead.
+
 		if (lb_is_const_nil(left)) {
+			if (internal_check_is_assignable_to(right.type, left.type)) {
+				right = lb_emit_conv(p, right, left.type);
+			}
 			return lb_emit_comp_against_nil(p, op_kind, right);
 		}
 		left = lb_emit_conv(p, left, right.type);
-	} else if (lb_is_const(right) || lb_is_const_nil(right)) {
+	} else if ((lb_is_const(right) && !is_type_array(right.type)) || lb_is_const_nil(right)) {
 		if (lb_is_const_nil(right)) {
+			if (internal_check_is_assignable_to(left.type, right.type)) {
+				left = lb_emit_conv(p, left, right.type);
+			}
 			return lb_emit_comp_against_nil(p, op_kind, left);
 		}
 		right = lb_emit_conv(p, right, left.type);
-
 	} else {
 		Type *lt = left.type;
 		Type *rt = right.type;
@@ -3451,8 +3461,14 @@ gb_internal lbValue lb_build_expr_internal(lbProcedure *p, Ast *expr) {
 
 	switch (expr->kind) {
 	case_ast_node(bl, BasicLit, expr);
+		if (type != nullptr && type->Named.name == "Error") {
+			Entity *e = type->Named.type_name;
+			if (e->pkg && e->pkg->name == "os") {
+				return lb_const_nil(p->module, type);
+			}
+		}
 		TokenPos pos = bl->token.pos;
-		GB_PANIC("Non-constant basic literal %s - %.*s", token_pos_to_string(pos), LIT(token_strings[bl->token.kind]));
+		GB_PANIC("Non-constant basic literal %s - %.*s (%s)", token_pos_to_string(pos), LIT(token_strings[bl->token.kind]), type_to_string(type));
 	case_end;
 
 	case_ast_node(bd, BasicDirective, expr);
