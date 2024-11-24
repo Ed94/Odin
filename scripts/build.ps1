@@ -5,6 +5,6 @@ $path_root = git rev-parse --show-toplevel
 
 Push-Location $path_root
 
-& build.bat
+& build.bat release
 
 Pop-Location
