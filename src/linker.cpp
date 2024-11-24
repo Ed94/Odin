@@ -605,9 +605,18 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 					link_settings = gb_string_appendc(link_settings, "-Wl,-fini,'_odin_exit_point' ");
 				}
 
-			} else if (build_context.metrics.os != TargetOs_openbsd && build_context.metrics.os != TargetOs_haiku && build_context.metrics.arch != TargetArch_riscv64) {
-				// OpenBSD and Haiku default to PIE executable. do not pass -no-pie for it.
-				link_settings = gb_string_appendc(link_settings, "-no-pie ");
+			}
+
+			if (build_context.build_mode == BuildMode_Executable && build_context.reloc_mode == RelocMode_PIC) {
+				// Do not disable PIE, let the linker choose. (most likely you want it enabled)
+			} else if (build_context.build_mode != BuildMode_DynamicLibrary) {
+				if (build_context.metrics.os != TargetOs_openbsd
+					&& build_context.metrics.os != TargetOs_haiku
+					&& build_context.metrics.arch != TargetArch_riscv64
+				) {
+					// OpenBSD and Haiku default to PIE executable. do not pass -no-pie for it.
+					link_settings = gb_string_appendc(link_settings, "-no-pie ");
+				}
 			}
 
 			gbString platform_lib_str = gb_string_make(heap_allocator(), "");
@@ -684,7 +693,7 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 			if (is_osx && build_context.ODIN_DEBUG) {
 				// NOTE: macOS links DWARF symbols dynamically. Dsymutil will map the stubs in the exe
 				// to the symbols in the object file
-				result = system_exec_command_line_app("dsymutil", "dsymutil %.*s", LIT(output_filename));
+				result = system_exec_command_line_app("dsymutil", "dsymutil \"%.*s\"", LIT(output_filename));
 
 				if (result) {
 					return result;

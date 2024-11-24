@@ -2199,6 +2199,7 @@ gb_internal void print_show_help(String const arg0, String const &command) {
 		print_usage_line(3, "-build-mode:test        Builds as an executable that executes tests.");
 		print_usage_line(3, "-build-mode:dll         Builds as a dynamically linked library.");
 		print_usage_line(3, "-build-mode:shared      Builds as a dynamically linked library.");
+		print_usage_line(3, "-build-mode:dynamic     Builds as a dynamically linked library.");
 		print_usage_line(3, "-build-mode:lib         Builds as a statically linked library.");
 		print_usage_line(3, "-build-mode:static      Builds as a statically linked library.");
 		print_usage_line(3, "-build-mode:obj         Builds as an object file.");
@@ -3391,6 +3392,7 @@ int main(int arg_count, char const **arg_ptr) {
 
 	Parser *parser = gb_alloc_item(permanent_allocator(), Parser);
 	Checker *checker = gb_alloc_item(permanent_allocator(), Checker);
+	bool failed_to_cache_parsing = false;
 
 	MAIN_TIME_SECTION("parse files");
 
@@ -3480,6 +3482,7 @@ int main(int arg_count, char const **arg_ptr) {
 		if (try_cached_build(checker, args)) {
 			goto end_of_code_gen;
 		}
+		failed_to_cache_parsing = true;
 	}
 
 #if ALLOW_TILDE
@@ -3545,18 +3548,23 @@ int main(int arg_count, char const **arg_ptr) {
 
 end_of_code_gen:;
 
-	if (build_context.show_timings) {
-		show_timings(checker, &global_timings);
-	}
-
 	if (build_context.export_dependencies_format != DependenciesExportUnspecified) {
 		export_dependencies(checker);
 	}
 
+	if (build_context.cached) {
+		MAIN_TIME_SECTION("write cached build");
+		if (!build_context.build_cache_data.copy_already_done) {
+			try_copy_executable_to_cache();
+		}
 
-	if (!build_context.build_cache_data.copy_already_done &&
-	    build_context.cached) {
-		try_copy_executable_to_cache();
+		if (failed_to_cache_parsing) {
+			write_cached_build(checker, args);
+		}
+	}
+
+	if (build_context.show_timings) {
+		show_timings(checker, &global_timings);
 	}
 
 	if (run_output) {
