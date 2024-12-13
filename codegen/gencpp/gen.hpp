@@ -22364,7 +22364,7 @@ CodeOperator parse_operator_after_ret_type(
 		case '<':
 		{
 			if ( currtok.Text[1] == '=' )
-				op = Op_LEqual;
+				op = Op_LesserEqual;
 
 			else if ( currtok.Text[1] == '<' )
 			{
