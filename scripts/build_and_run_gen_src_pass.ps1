@@ -14,9 +14,6 @@ Import-Module $format_cpp
 $vendor       = $null
 $release      = $null
 $verbose      = $false
-[bool] $bootstrap    = $false
-[bool] $singleheader = $false
-[bool] $test         = $false
 
 [array] $vendors = @( "clang", "msvc" )
 
