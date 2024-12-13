@@ -57,6 +57,10 @@
 #define LB_USE_NEW_PASS_SYSTEM 0
 #endif
 
+#if LLVM_VERSION_MAJOR >= 19
+#define LLVMDIBuilderInsertDeclareAtEnd(...) LLVMDIBuilderInsertDeclareRecordAtEnd(__VA_ARGS__)
+#endif
+
 gb_internal bool lb_use_new_pass_system(void) {
 	return LB_USE_NEW_PASS_SYSTEM;
 }
@@ -75,7 +79,6 @@ enum lbAddrKind {
 	lbAddr_Context,
 	lbAddr_SoaVariable,
 
-	lbAddr_RelativePointer,
 
 	lbAddr_Swizzle,
 	lbAddr_SwizzleLarge,
@@ -103,9 +106,6 @@ struct lbAddr {
 			lbValue index;
 			Ast *node;
 		} index_set;
-		struct {
-			bool deref;
-		} relative;
 		struct {
 			Type *type;
 			u8 count;      // 2, 3, or 4 components
