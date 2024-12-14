@@ -28,7 +28,7 @@ inline
 void git_restore_file( char const* path )
 {
 	#define git_restore_cmd "git restore "
-	StrBuilder command = StrBuilder::make( GlobalAllocator, git_restore_cmd );
+	StrBuilder command = StrBuilder::make( _ctx->Allocator_Temp, git_restore_cmd );
 	command.append( path );
 		log_fmt("Running git restore on: %s", path);
 		system(command);
@@ -44,7 +44,7 @@ void format_file( char const* path )
 	#define cf_format_inplace "-i "
 	#define cf_style          "-style=file:" "./scripts/.clang-format "
 	#define cf_verbose        "-verbose "
-	StrBuilder command = StrBuilder::make( GlobalAllocator, clang_format );
+	StrBuilder command = StrBuilder::make( _ctx->Allocator_Temp, clang_format );
 	command.append( cf_format_inplace );
 	command.append( cf_style );
 	command.append( cf_verbose );
@@ -59,13 +59,13 @@ void format_file( char const* path )
 }
 
 struct Odin_AstKind {
-	StringCached desc;
-	Code         def;
+	StrCached desc;
+	Code      def;
 };
 
 Array<Odin_AstKind> get_odin_ast_kinds()
 {
-	local_persist Array<Odin_AstKind> kinds = Array<Odin_AstKind>::init_reserve(GlobalAllocator, kilobytes(64));
+	local_persist Array<Odin_AstKind> kinds = Array<Odin_AstKind>::init_reserve(_ctx->Allocator_Temp, kilobytes(64));
 	{
 		local_persist s32 done_once = 0;
 		if (done_once)
@@ -128,7 +128,7 @@ Array<Odin_AstKind> get_odin_ast_kinds()
 
 Array<Code> get_odin_type_kinds()
 {
-	local_persist Array<Code> types = Array<Code>::init_reserve(GlobalAllocator, kilobytes(64));
+	local_persist Array<Code> types = Array<Code>::init_reserve(_ctx->Allocator_Temp, kilobytes(64));
 	{
 		local_persist s32 done_once = 0;
 		if (done_once)
@@ -155,11 +155,12 @@ Array<Code> get_odin_type_kinds()
 
 int gen_main()
 {
-	gen::init();
+	Context ctx {};
+	gen::init(& ctx);
 	log_fmt("Generating code for Odin's src\n");
 
 	Str str_GB_STATIC_ASSERT = txt("GB_STATIC_ASSERT(");
-	PreprocessorDefines.append( get_cached_string(str_GB_STATIC_ASSERT) );
+	_ctx->PreprocessorDefines.append( cache_str(str_GB_STATIC_ASSERT) );
 
 	// Remove TOKEN_KINDS usage in tokenizer.cpp
 	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
@@ -171,13 +172,13 @@ int gen_main()
 			Arena scratch = Arena::init_from_memory( scratch_mem, sizeof(scratch_mem) );
 			file_read_contents( scratch, file_zero_terminate, path_codegen "token_kinds.csv" );
 
-			csv_parse( &csv_nodes, scratch_mem, GlobalAllocator, false );
+			csv_parse( &csv_nodes, scratch_mem, ctx.Allocator_Temp, false );
 		}
 		Array<ADT_Node> enum_strs = csv_nodes.nodes[0].nodes;
 		Array<ADT_Node> str_strs  = csv_nodes.nodes[1].nodes;
 
-		StrBuilder enum_entries   = StrBuilder::make_reserve( GlobalAllocator, kilobytes(32) );
-		StrBuilder to_str_entries = StrBuilder::make_reserve( GlobalAllocator, kilobytes(32) );
+		StrBuilder enum_entries   = StrBuilder::make_reserve( ctx.Allocator_Temp, kilobytes(32) );
+		StrBuilder to_str_entries = StrBuilder::make_reserve( ctx.Allocator_Temp, kilobytes(32) );
 
 		to_str_entries.append(txt("{"));
 		for (usize idx = 0; idx < enum_strs.num(); idx++)
@@ -291,7 +292,7 @@ int gen_main()
 						{
 							swap_body.append( code_str(Ast_Invalid,));
 							for (Odin_AstKind& kind : ast_kinds)
-								swap_body.append( untyped_str( StrBuilder::fmt_buf(GlobalAllocator, "Ast_%S,", kind.def->Name )));
+								swap_body.append( untyped_str( StrBuilder::fmt_buf(ctx.Allocator_Temp, "Ast_%S,", kind.def->Name )));
 							swap_body.append( code_str(Ast_COUNT));
 						}
 						CodeEnum swapped_enum = cast(CodeEnum, code).duplicate();
@@ -308,7 +309,7 @@ int gen_main()
 					if (code->Name.starts_with(txt("ast_strings")))
 					{
 						// Swap with generated table
-						StrBuilder generated_table = StrBuilder::make_reserve(GlobalAllocator, kilobytes(32));
+						StrBuilder generated_table = StrBuilder::make_reserve(ctx.Allocator_Temp, kilobytes(32));
 						{
 						#pragma push_macro("cast")
 						#undef cast
@@ -338,7 +339,7 @@ int gen_main()
 						for (Odin_AstKind& kind : ast_kinds)
 						{
 							Code def = kind.def.duplicate();
-							def->Name = get_cached_string( StrBuilder::fmt_buf(GlobalAllocator, "Ast%S", kind.def->Name));
+							def->Name = cache_str( StrBuilder::fmt_buf(ctx.Allocator_Temp, "Ast%S", kind.def->Name));
 							body.append( def );
 							body.append(fmt_newline);
 						}
@@ -348,7 +349,7 @@ int gen_main()
 					if (code->Name.starts_with(txt("ast_variant_sizes")))
 					{
 						// Swap with generated table
-						StrBuilder generated_table = StrBuilder::make_reserve(GlobalAllocator, kilobytes(32));
+						StrBuilder generated_table = StrBuilder::make_reserve(ctx.Allocator_Temp, kilobytes(32));
 						{
 							for (Odin_AstKind& kind : ast_kinds)
 								generated_table.append(token_fmt( "name", (Str)kind.def->Name, stringize(
@@ -445,7 +446,7 @@ int gen_main()
 						swap_body.append( code_str(Type_Invalid, ));
 						{
 							for (Code type : type_kinds)
-								swap_body.append( untyped_str( StrBuilder::fmt_buf(GlobalAllocator, "Type_%S,", type->Name )));
+								swap_body.append( untyped_str( StrBuilder::fmt_buf(ctx.Allocator_Temp, "Type_%S,", type->Name )));
 							swap_body.append( code_str(Type_COUNT));
 						}
 						CodeEnum swapped_enum = cast(CodeEnum, code).duplicate();
@@ -465,7 +466,7 @@ int gen_main()
 				#pragma push_macro("cast")
 				#undef cast
 					// Swap with generated table
-					StrBuilder generated_table = StrBuilder::make_reserve(GlobalAllocator, kilobytes(32));
+					StrBuilder generated_table = StrBuilder::make_reserve(ctx.Allocator_Temp, kilobytes(32));
 					{
 						for (Code type : type_kinds)
 							generated_table.append(token_fmt("type", (Str)type->Name, stringize(
@@ -488,7 +489,7 @@ int gen_main()
 					for (Code type : type_kinds)
 					{
 						Code def = type.duplicate();
-						def->Name = get_cached_string( StrBuilder::fmt_buf(GlobalAllocator, "Type%S", type->Name));
+						def->Name = cache_str( StrBuilder::fmt_buf(ctx.Allocator_Temp, "Type%S", type->Name));
 						body.append( def );
 						body.append(fmt_newline);
 					}
