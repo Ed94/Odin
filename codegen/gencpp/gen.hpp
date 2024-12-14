@@ -195,27 +195,15 @@
 
 #if GEN_DONT_USE_NAMESPACE || GEN_COMPILER_C
 #	if GEN_COMPILER_C
-#		define GEN_NS_PARSER_BEGIN
-#		define GEN_NS_PARSER_END
-#		define GEN_USING_NS_PARSER
-#		define GEN_NS_PARSER
 #		define GEN_NS
 #		define GEN_NS_BEGIN
 #		define GEN_NS_END
 #	else
-#		define GEN_NS_PARSER_BEGIN namespace parser {
-#		define GEN_NS_PARSER_END   }
-#		define GEN_USING_NS_PARSER using namespace parser
-#		define GEN_NS_PARSER       parser::
 #		define GEN_NS              ::
 #		define GEN_NS_BEGIN
 #		define GEN_NS_END
 #	endif
 #else
-#	define GEN_NS_PARSER_BEGIN namespace parser {
-#	define GEN_NS_PARSER_END   }
-#	define GEN_NS_PARSER       parser::
-#	define GEN_USING_NS_PARSER using namespace parser
 #	define GEN_NS              gen::
 #	define GEN_NS_BEGIN        namespace gen {
 #	define GEN_NS_END          }
@@ -224,6 +212,24 @@
 GEN_NS_BEGIN
 
 #pragma region Macros
+
+#if GEN_COMPILER_MSVC
+    #ifdef GEN_DYN_LINK
+        #ifdef GEN_DYN_EXPORT
+            #define GEN_API __declspec(dllexport)
+        #else
+            #define GEN_API __declspec(dllimport)
+        #endif
+    #else
+        #define GEN_API  // Empty for static builds
+    #endif
+#else
+    #ifdef GEN_DYN_LINK
+        #define GEN_API __attribute__((visibility("default")))
+    #else
+        #define GEN_API  // Empty for static builds
+    #endif
+#endif
 
 #ifndef global
 #define global        static    // Global variables
@@ -289,7 +295,13 @@ GEN_NS_BEGIN
 #endif
 
 #ifndef do_once
-#define do_once( statement ) for ( local_persist b32 once = true; once; once = false, (statement) )
+#define do_once()                                                               \
+    static int __do_once_counter_##__LINE__ = 0;                                \
+    for(; __do_once_counter_##__LINE__ != 1; __do_once_counter_##__LINE__ = 1 ) \
+
+#define do_once_defer( expression )                                                          \
+    static int __do_once_counter_##__LINE__ = 0;                                             \
+    for(; __do_once_counter_##__LINE__ != 1; __do_once_counter_##__LINE__ = 1, (expression)) \
 
 #define do_once_start      \
 	do                     \
@@ -649,10 +661,10 @@ template<typename Type> mem_ptr_const to_mem_ptr_const( Type ptr ) { return (mem
 #if GEN_BUILD_DEBUG
 #	if defined( GEN_COMPILER_MSVC )
 #		if _MSC_VER < 1300
-#pragma message("__asm int 3")
+#pragma message("GEN_BUILD_DEBUG: __asm int 3")
 #			define GEN_DEBUG_TRAP() __asm int 3 /* Trap to debugger! */
 #		else
-#pragma message("__debug_break()")
+#pragma message("GEN_BUILD_DEBUG: __debugbreak()")
 #			define GEN_DEBUG_TRAP() __debugbreak()
 #		endif
 #	elif defined( GEN_COMPILER_TINYC )
@@ -661,7 +673,7 @@ template<typename Type> mem_ptr_const to_mem_ptr_const( Type ptr ) { return (mem
 #		define GEN_DEBUG_TRAP() __builtin_trap()
 #	endif
 #else
-#pragma message("DEBUG TRAP DISABLED")
+#pragma message("GEN_BUILD_DEBUG: omitted")
 #	define GEN_DEBUG_TRAP()
 #endif
 
@@ -689,7 +701,7 @@ template<typename Type> mem_ptr_const to_mem_ptr_const( Type ptr ) { return (mem
 		local_persist thread_local                         \
 		char buf[GEN_PRINTF_MAXLEN] = { 0 };               \
 		                                                   \
-		c_str_fmt(buf, GEN_PRINTF_MAXLEN, __VA_ARGS__);      \
+		c_str_fmt(buf, GEN_PRINTF_MAXLEN, __VA_ARGS__);    \
 		GEN_PANIC(buf);                                    \
 	}                                                      \
 	while (0)
@@ -1380,7 +1392,7 @@ void zero_size( void* ptr, ssize size ) {
 
 #pragma endregion Memory
 
-#pragma region StrBuilder Ops
+#pragma region String Ops
 
 const char* char_first_occurence( const char* str, char c );
 
@@ -1661,7 +1673,7 @@ void c_str_to_upper( char* str )
 	}
 }
 
-#pragma endregion StrBuilder Ops
+#pragma endregion String Ops
 
 #pragma region Printing
 
@@ -1800,16 +1812,16 @@ struct Array
 #endif
 
 #if GEN_COMPILER_CPP && 0
-template<class Type> bool         append(Array<Type>& array, Array<Type> other)                         { return append( & array, other ); }
-template<class Type> bool         append(Array<Type>& array, Type value)                                { return append( & array, value ); }
-template<class Type> bool         append(Array<Type>& array, Type* items, usize item_num)               { return append( & array, items, item_num ); }
-template<class Type> bool         append_at(Array<Type>& array, Type item, usize idx)                   { return append_at( & array, item, idx ); }
-template<class Type> bool         append_at(Array<Type>& array, Type* items, usize item_num, usize idx) { return append_at( & array, items, item_num, idx ); }
-template<class Type> void         free(Array<Type>& array)                                              { return free( & array ); }
-template<class Type> bool         grow(Array<Type>& array, usize min_capacity)                          { return grow( & array, min_capacity); }
-template<class Type> bool         reserve(Array<Type>& array, usize new_capacity)                       { return reserve( & array, new_capacity); }
-template<class Type> bool         resize(Array<Type>& array, usize num)                                 { return resize( & array, num); }
-template<class Type> bool         set_capacity(Array<Type>& array, usize new_capacity)                  { return set_capacity( & array, new_capacity); }
+template<class Type> bool append(Array<Type>& array, Array<Type> other)                         { return append( & array, other ); }
+template<class Type> bool append(Array<Type>& array, Type value)                                { return append( & array, value ); }
+template<class Type> bool append(Array<Type>& array, Type* items, usize item_num)               { return append( & array, items, item_num ); }
+template<class Type> bool append_at(Array<Type>& array, Type item, usize idx)                   { return append_at( & array, item, idx ); }
+template<class Type> bool append_at(Array<Type>& array, Type* items, usize item_num, usize idx) { return append_at( & array, items, item_num, idx ); }
+template<class Type> void free(Array<Type>& array)                                              { return free( & array ); }
+template<class Type> bool grow(Array<Type>& array, usize min_capacity)                          { return grow( & array, min_capacity); }
+template<class Type> bool reserve(Array<Type>& array, usize new_capacity)                       { return reserve( & array, new_capacity); }
+template<class Type> bool resize(Array<Type>& array, usize num)                                 { return resize( & array, num); }
+template<class Type> bool set_capacity(Array<Type>& array, usize new_capacity)                  { return set_capacity( & array, new_capacity); }
 
 template<class Type> forceinline Type* begin(Array<Type>& array)             { return array;      }
 template<class Type> forceinline Type* end(Array<Type>& array)               { return array + array_get_header(array)->Num; }
@@ -2514,8 +2526,8 @@ Str         str_visualize_whitespace(Str str, AllocatorInfo allocator);
 // Constant string with length.
 struct Str
 {
-	ssize       Len;
 	char const* Ptr;
+	ssize       Len;
 
 #if GEN_COMPILER_CPP
 	forceinline operator char const* ()               const { return Ptr; }
@@ -2536,9 +2548,9 @@ struct Str
 
 #ifndef txt
 #	if GEN_COMPILER_CPP
-#		define txt( text )          Str { sizeof( text ) - 1, ( text ) }
+#		define txt( text )          Str { ( text ), sizeof( text ) - 1 }
 #	else
-#		define txt( text )         (Str){ sizeof( text ) - 1, ( text ) }
+#		define txt( text )         (Str){ ( text ), sizeof( text ) - 1 }
 #	endif
 #endif
 
@@ -2599,7 +2611,7 @@ b32 str_starts_with(Str str, Str substring) {
 
 inline
 Str to_str_from_c_str( char const* bad_str ) {
-	Str result = { c_str_len( bad_str ), bad_str };
+	Str result = { bad_str, c_str_len( bad_str ) };
 	return result;
 }
 
@@ -2666,7 +2678,7 @@ struct StrBuilder
 
 	forceinline operator char*()             { return Data; }
 	forceinline operator char const*() const { return Data; }
-	forceinline operator Str()         const { return { strbuilder_length(* this), Data }; }
+	forceinline operator Str()         const { return { Data, strbuilder_length(* this) }; }
 
 	StrBuilder const& operator=(StrBuilder const& other) const {
 		if (this == &other)
@@ -2718,31 +2730,31 @@ struct StrBuilder
 		return strbuilder_make_length(allocator, buf, res);
 	}
 
-	forceinline bool          make_space_for(char const* str, ssize add_len) { return strbuilder_make_space_for(this, str, add_len); }
-	forceinline bool          append(char c)                                 { return strbuilder_append_char(this, c); }
-	forceinline bool          append(char const* str)                        { return strbuilder_append_c_str(this, str); }
-	forceinline bool          append(char const* str, ssize length)          { return strbuilder_append_c_str_len(this, str, length); }
-	forceinline bool          append(Str str)                                { return strbuilder_append_str(this, str); }
-	forceinline bool          append(const StrBuilder other)                 { return strbuilder_append_string(this, other); }
-	forceinline ssize         avail_space() const                            { return strbuilder_avail_space(* this); }
-	forceinline char*         back()                                         { return strbuilder_back(* this); }
-	forceinline bool          contains(Str substring) const                  { return strbuilder_contains_str(* this, substring); }
-	forceinline bool          contains(StrBuilder const& substring) const    { return strbuilder_contains_string(* this, substring); }
-	forceinline ssize         capacity() const                               { return strbuilder_capacity(* this); }
-	forceinline void          clear()                                        {        strbuilder_clear(* this); }
-	forceinline StrBuilder    duplicate(AllocatorInfo allocator) const       { return strbuilder_duplicate(* this, allocator); }
-	forceinline void          free()                                         {        strbuilder_free(this); }
-	forceinline bool          is_equal(StrBuilder const& other) const        { return strbuilder_are_equal(* this, other); }
-	forceinline bool          is_equal(Str other) const                      { return strbuilder_are_equal_str(* this, other); }
-	forceinline ssize         length() const                                 { return strbuilder_length(* this); }
-	forceinline b32           starts_with(Str substring) const               { return strbuilder_starts_with_str(* this, substring); }
-	forceinline b32           starts_with(StrBuilder substring) const        { return strbuilder_starts_with_string(* this, substring); }
-	forceinline void          skip_line()                                    {        strbuilder_skip_line(* this); }
-	forceinline void          strip_space()                                  {        strbuilder_strip_space(* this); }
-	forceinline Str           to_str()                                       { return { strbuilder_length(*this), Data}; }
-	forceinline void          trim(char const* cut_set)                      {        strbuilder_trim(* this, cut_set); }
-	forceinline void          trim_space()                                   {        strbuilder_trim_space(* this); }
-	forceinline StrBuilder    visualize_whitespace() const                   { return strbuilder_visualize_whitespace(* this); }
+	forceinline bool              make_space_for(char const* str, ssize add_len) { return strbuilder_make_space_for(this, str, add_len); }
+	forceinline bool              append(char c)                                 { return strbuilder_append_char(this, c); }
+	forceinline bool              append(char const* str)                        { return strbuilder_append_c_str(this, str); }
+	forceinline bool              append(char const* str, ssize length)          { return strbuilder_append_c_str_len(this, str, length); }
+	forceinline bool              append(Str str)                                { return strbuilder_append_str(this, str); }
+	forceinline bool              append(const StrBuilder other)                 { return strbuilder_append_string(this, other); }
+	forceinline ssize             avail_space() const                            { return strbuilder_avail_space(* this); }
+	forceinline char*             back()                                         { return strbuilder_back(* this); }
+	forceinline bool              contains(Str substring) const                  { return strbuilder_contains_str(* this, substring); }
+	forceinline bool              contains(StrBuilder const& substring) const    { return strbuilder_contains_string(* this, substring); }
+	forceinline ssize             capacity() const                               { return strbuilder_capacity(* this); }
+	forceinline void              clear()                                        {        strbuilder_clear(* this); }
+	forceinline StrBuilder        duplicate(AllocatorInfo allocator) const       { return strbuilder_duplicate(* this, allocator); }
+	forceinline void              free()                                         {        strbuilder_free(this); }
+	forceinline bool              is_equal(StrBuilder const& other) const        { return strbuilder_are_equal(* this, other); }
+	forceinline bool              is_equal(Str other) const                      { return strbuilder_are_equal_str(* this, other); }
+	forceinline ssize             length() const                                 { return strbuilder_length(* this); }
+	forceinline b32               starts_with(Str substring) const               { return strbuilder_starts_with_str(* this, substring); }
+	forceinline b32               starts_with(StrBuilder substring) const        { return strbuilder_starts_with_string(* this, substring); }
+	forceinline void              skip_line()                                    {        strbuilder_skip_line(* this); }
+	forceinline void              strip_space()                                  {        strbuilder_strip_space(* this); }
+	forceinline Str               to_str()                                       { return { Data, strbuilder_length(*this) }; }
+	forceinline void              trim(char const* cut_set)                      {        strbuilder_trim(* this, cut_set); }
+	forceinline void              trim_space()                                   {        strbuilder_trim_space(* this); }
+	forceinline StrBuilder        visualize_whitespace() const                   { return strbuilder_visualize_whitespace(* this); }
 	forceinline StrBuilderHeader& get_header()                                   { return * strbuilder_get_header(* this); }
 
 	bool append_fmt(char const* fmt, ...) {
@@ -3117,7 +3129,7 @@ void strip_space(StrBuilder str)
 
 forceinline
 Str strbuilder_to_str(StrBuilder str) {
-	Str result = { strbuilder_length(str), (char const*)str };
+	Str result = { (char const*)str, strbuilder_length(str) };
 	return result;
 }
 
@@ -3233,10 +3245,10 @@ Str str_visualize_whitespace(Str str, AllocatorInfo allocator)
 
 // Represents strings cached with the string table.
 // Should never be modified, if changed string is desired, cache_string( str ) another.
-typedef Str StringCached;
+typedef Str StrCached;
 
 // Implements basic string interning. Data structure is based off the ZPL Hashtable.
-typedef HashTable(StringCached) StringTable;
+typedef HashTable(StrCached) StringTable;
 #pragma endregion Strings
 
 #pragma region File Handling
@@ -4064,6 +4076,7 @@ StrBuilder csv_write_string( AllocatorInfo a, CSV_Object* obj )
 }
 
 #pragma endregion CSV
+
 GEN_NS_END
 
 // GEN_ROLL_OWN_DEPENDENCIES
@@ -4118,13 +4131,13 @@ Str access_spec_to_str( AccessSpec type )
 {
 	local_persist
 	Str lookup[ (u32)AccessSpec_Num_AccessSpec ] = {
-		{ sizeof("") - 1,          "" },
-		{ sizeof("prviate") - 1,   "private" },
-		{ sizeof("protected") - 1, "private" },
-		{ sizeof("public") - 1,    "public" },
+		{ "",        sizeof( "" )        - 1 },
+		{ "private", sizeof("prviate")   - 1 },
+		{ "private", sizeof("protected") - 1 },
+		{ "public",  sizeof("public")    - 1 },
 	};
 
-	Str invalid = { sizeof("Invalid") - 1, "Invalid" };
+	Str invalid = { "Invalid", sizeof("Invalid") - 1 };
 	if ( type > AccessSpec_Public )
 		return invalid;
 
@@ -4171,13 +4184,13 @@ Str module_flag_to_str( ModuleFlag flag )
 {
 	local_persist
 	Str lookup[ (u32)Num_ModuleFlags ] = {
-		{ sizeof("__none__"), "__none__" },
-		{ sizeof("export"), "export" },
-		{ sizeof("import"), "import" },
+		{ "__none__", sizeof("__none__") - 1 },
+		{ "export",   sizeof("export")   - 1 },
+		{ "import",   sizeof("import")   - 1 },
 	};
 
 	local_persist
-	Str invalid_flag = { sizeof("invalid"), "invalid" };
+	Str invalid_flag = { "invalid", sizeof("invalid") };
 	if ( flag > ModuleFlag_Import )
 		return invalid_flag;
 
@@ -4277,67 +4290,67 @@ enum CodeType : u32
 inline Str codetype_to_str( CodeType type )
 {
 	local_persist Str lookup[61] = {
-		{ sizeof( "Invalid" ),             "Invalid"             },
-		{ sizeof( "Untyped" ),             "Untyped"             },
-		{ sizeof( "NewLine" ),             "NewLine"             },
-		{ sizeof( "Comment" ),             "Comment"             },
-		{ sizeof( "Access_Private" ),      "Access_Private"      },
-		{ sizeof( "Access_Protected" ),    "Access_Protected"    },
-		{ sizeof( "Access_Public" ),       "Access_Public"       },
-		{ sizeof( "PlatformAttributes" ),  "PlatformAttributes"  },
-		{ sizeof( "Class" ),               "Class"               },
-		{ sizeof( "Class_Fwd" ),           "Class_Fwd"           },
-		{ sizeof( "Class_Body" ),          "Class_Body"          },
-		{ sizeof( "Constructor" ),         "Constructor"         },
-		{ sizeof( "Constructor_Fwd" ),     "Constructor_Fwd"     },
-		{ sizeof( "Destructor" ),          "Destructor"          },
-		{ sizeof( "Destructor_Fwd" ),      "Destructor_Fwd"      },
-		{ sizeof( "Enum" ),                "Enum"                },
-		{ sizeof( "Enum_Fwd" ),            "Enum_Fwd"            },
-		{ sizeof( "Enum_Body" ),           "Enum_Body"           },
-		{ sizeof( "Enum_Class" ),          "Enum_Class"          },
-		{ sizeof( "Enum_Class_Fwd" ),      "Enum_Class_Fwd"      },
-		{ sizeof( "Execution" ),           "Execution"           },
-		{ sizeof( "Export_Body" ),         "Export_Body"         },
-		{ sizeof( "Extern_Linkage" ),      "Extern_Linkage"      },
-		{ sizeof( "Extern_Linkage_Body" ), "Extern_Linkage_Body" },
-		{ sizeof( "Friend" ),              "Friend"              },
-		{ sizeof( "Function" ),            "Function"            },
-		{ sizeof( "Function_Fwd" ),        "Function_Fwd"        },
-		{ sizeof( "Function_Body" ),       "Function_Body"       },
-		{ sizeof( "Global_Body" ),         "Global_Body"         },
-		{ sizeof( "Module" ),              "Module"              },
-		{ sizeof( "Namespace" ),           "Namespace"           },
-		{ sizeof( "Namespace_Body" ),      "Namespace_Body"      },
-		{ sizeof( "Operator" ),            "Operator"            },
-		{ sizeof( "Operator_Fwd" ),        "Operator_Fwd"        },
-		{ sizeof( "Operator_Member" ),     "Operator_Member"     },
-		{ sizeof( "Operator_Member_Fwd" ), "Operator_Member_Fwd" },
-		{ sizeof( "Operator_Cast" ),       "Operator_Cast"       },
-		{ sizeof( "Operator_Cast_Fwd" ),   "Operator_Cast_Fwd"   },
-		{ sizeof( "Parameters" ),          "Parameters"          },
-		{ sizeof( "Preprocess_Define" ),   "Preprocess_Define"   },
-		{ sizeof( "Preprocess_Include" ),  "Preprocess_Include"  },
-		{ sizeof( "Preprocess_If" ),       "Preprocess_If"       },
-		{ sizeof( "Preprocess_IfDef" ),    "Preprocess_IfDef"    },
-		{ sizeof( "Preprocess_IfNotDef" ), "Preprocess_IfNotDef" },
-		{ sizeof( "Preprocess_ElIf" ),     "Preprocess_ElIf"     },
-		{ sizeof( "Preprocess_Else" ),     "Preprocess_Else"     },
-		{ sizeof( "Preprocess_EndIf" ),    "Preprocess_EndIf"    },
-		{ sizeof( "Preprocess_Pragma" ),   "Preprocess_Pragma"   },
-		{ sizeof( "Specifiers" ),          "Specifiers"          },
-		{ sizeof( "Struct" ),              "Struct"              },
-		{ sizeof( "Struct_Fwd" ),          "Struct_Fwd"          },
-		{ sizeof( "Struct_Body" ),         "Struct_Body"         },
-		{ sizeof( "Template" ),            "Template"            },
-		{ sizeof( "Typedef" ),             "Typedef"             },
-		{ sizeof( "Typename" ),            "Typename"            },
-		{ sizeof( "Union" ),               "Union"               },
-		{ sizeof( "Union_Fwd" ),           "Union_Fwd"           },
-		{ sizeof( "Union_Body" ),          "Union_Body"          },
-		{ sizeof( "Using" ),               "Using"               },
-		{ sizeof( "Using_Namespace" ),     "Using_Namespace"     },
-		{ sizeof( "Variable" ),            "Variable"            },
+		{ "Invalid",             sizeof( "Invalid" ) - 1             },
+		{ "Untyped",             sizeof( "Untyped" ) - 1             },
+		{ "NewLine",             sizeof( "NewLine" ) - 1             },
+		{ "Comment",             sizeof( "Comment" ) - 1             },
+		{ "Access_Private",      sizeof( "Access_Private" ) - 1      },
+		{ "Access_Protected",    sizeof( "Access_Protected" ) - 1    },
+		{ "Access_Public",       sizeof( "Access_Public" ) - 1       },
+		{ "PlatformAttributes",  sizeof( "PlatformAttributes" ) - 1  },
+		{ "Class",               sizeof( "Class" ) - 1               },
+		{ "Class_Fwd",           sizeof( "Class_Fwd" ) - 1           },
+		{ "Class_Body",          sizeof( "Class_Body" ) - 1          },
+		{ "Constructor",         sizeof( "Constructor" ) - 1         },
+		{ "Constructor_Fwd",     sizeof( "Constructor_Fwd" ) - 1     },
+		{ "Destructor",          sizeof( "Destructor" ) - 1          },
+		{ "Destructor_Fwd",      sizeof( "Destructor_Fwd" ) - 1      },
+		{ "Enum",                sizeof( "Enum" ) - 1                },
+		{ "Enum_Fwd",            sizeof( "Enum_Fwd" ) - 1            },
+		{ "Enum_Body",           sizeof( "Enum_Body" ) - 1           },
+		{ "Enum_Class",          sizeof( "Enum_Class" ) - 1          },
+		{ "Enum_Class_Fwd",      sizeof( "Enum_Class_Fwd" ) - 1      },
+		{ "Execution",           sizeof( "Execution" ) - 1           },
+		{ "Export_Body",         sizeof( "Export_Body" ) - 1         },
+		{ "Extern_Linkage",      sizeof( "Extern_Linkage" ) - 1      },
+		{ "Extern_Linkage_Body", sizeof( "Extern_Linkage_Body" ) - 1 },
+		{ "Friend",              sizeof( "Friend" ) - 1              },
+		{ "Function",            sizeof( "Function" ) - 1            },
+		{ "Function_Fwd",        sizeof( "Function_Fwd" ) - 1        },
+		{ "Function_Body",       sizeof( "Function_Body" ) - 1       },
+		{ "Global_Body",         sizeof( "Global_Body" ) - 1         },
+		{ "Module",              sizeof( "Module" ) - 1              },
+		{ "Namespace",           sizeof( "Namespace" ) - 1           },
+		{ "Namespace_Body",      sizeof( "Namespace_Body" ) - 1      },
+		{ "Operator",            sizeof( "Operator" ) - 1            },
+		{ "Operator_Fwd",        sizeof( "Operator_Fwd" ) - 1        },
+		{ "Operator_Member",     sizeof( "Operator_Member" ) - 1     },
+		{ "Operator_Member_Fwd", sizeof( "Operator_Member_Fwd" ) - 1 },
+		{ "Operator_Cast",       sizeof( "Operator_Cast" ) - 1       },
+		{ "Operator_Cast_Fwd",   sizeof( "Operator_Cast_Fwd" ) - 1   },
+		{ "Parameters",          sizeof( "Parameters" ) - 1          },
+		{ "Preprocess_Define",   sizeof( "Preprocess_Define" ) - 1   },
+		{ "Preprocess_Include",  sizeof( "Preprocess_Include" ) - 1  },
+		{ "Preprocess_If",       sizeof( "Preprocess_If" ) - 1       },
+		{ "Preprocess_IfDef",    sizeof( "Preprocess_IfDef" ) - 1    },
+		{ "Preprocess_IfNotDef", sizeof( "Preprocess_IfNotDef" ) - 1 },
+		{ "Preprocess_ElIf",     sizeof( "Preprocess_ElIf" ) - 1     },
+		{ "Preprocess_Else",     sizeof( "Preprocess_Else" ) - 1     },
+		{ "Preprocess_EndIf",    sizeof( "Preprocess_EndIf" ) - 1    },
+		{ "Preprocess_Pragma",   sizeof( "Preprocess_Pragma" ) - 1   },
+		{ "Specifiers",          sizeof( "Specifiers" ) - 1          },
+		{ "Struct",              sizeof( "Struct" ) - 1              },
+		{ "Struct_Fwd",          sizeof( "Struct_Fwd" ) - 1          },
+		{ "Struct_Body",         sizeof( "Struct_Body" ) - 1         },
+		{ "Template",            sizeof( "Template" ) - 1            },
+		{ "Typedef",             sizeof( "Typedef" ) - 1             },
+		{ "Typename",            sizeof( "Typename" ) - 1            },
+		{ "Union",               sizeof( "Union" ) - 1               },
+		{ "Union_Fwd",           sizeof( "Union_Fwd" ) - 1           },
+		{ "Union_Body",          sizeof( "Union_Body" ) - 1          },
+		{ "Using",               sizeof( "Using" ) - 1               },
+		{ "Using_Namespace",     sizeof( "Using_Namespace" ) - 1     },
+		{ "Variable",            sizeof( "Variable" ) - 1            },
 	};
 	return lookup[type];
 }
@@ -4345,67 +4358,67 @@ inline Str codetype_to_str( CodeType type )
 inline Str codetype_to_keyword_str( CodeType type )
 {
 	local_persist Str lookup[61] = {
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "//" ) - 1,              "//"              },
-		{ sizeof( "private" ) - 1,         "private"         },
-		{ sizeof( "protected" ) - 1,       "protected"       },
-		{ sizeof( "public" ) - 1,          "public"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "class" ) - 1,           "class"           },
-		{ sizeof( "clsss" ) - 1,           "clsss"           },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "enum" ) - 1,            "enum"            },
-		{ sizeof( "enum" ) - 1,            "enum"            },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "enum class" ) - 1,      "enum class"      },
-		{ sizeof( "enum class" ) - 1,      "enum class"      },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "extern" ) - 1,          "extern"          },
-		{ sizeof( "extern" ) - 1,          "extern"          },
-		{ sizeof( "friend" ) - 1,          "friend"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "module" ) - 1,          "module"          },
-		{ sizeof( "namespace" ) - 1,       "namespace"       },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "operator" ) - 1,        "operator"        },
-		{ sizeof( "operator" ) - 1,        "operator"        },
-		{ sizeof( "operator" ) - 1,        "operator"        },
-		{ sizeof( "operator" ) - 1,        "operator"        },
-		{ sizeof( "operator" ) - 1,        "operator"        },
-		{ sizeof( "operator" ) - 1,        "operator"        },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "define" ) - 1,          "define"          },
-		{ sizeof( "include" ) - 1,         "include"         },
-		{ sizeof( "if" ) - 1,              "if"              },
-		{ sizeof( "ifdef" ) - 1,           "ifdef"           },
-		{ sizeof( "ifndef" ) - 1,          "ifndef"          },
-		{ sizeof( "elif" ) - 1,            "elif"            },
-		{ sizeof( "else" ) - 1,            "else"            },
-		{ sizeof( "endif" ) - 1,           "endif"           },
-		{ sizeof( "pragma" ) - 1,          "pragma"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "struct" ) - 1,          "struct"          },
-		{ sizeof( "struct" ) - 1,          "struct"          },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "template" ) - 1,        "template"        },
-		{ sizeof( "typedef" ) - 1,         "typedef"         },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "union" ) - 1,           "union"           },
-		{ sizeof( "union" ) - 1,           "union"           },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
-		{ sizeof( "using" ) - 1,           "using"           },
-		{ sizeof( "using namespace" ) - 1, "using namespace" },
-		{ sizeof( "__NA__" ) - 1,          "__NA__"          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "//",              sizeof( "//" ) - 1              },
+		{ "private",         sizeof( "private" ) - 1         },
+		{ "protected",       sizeof( "protected" ) - 1       },
+		{ "public",          sizeof( "public" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "class",           sizeof( "class" ) - 1           },
+		{ "clsss",           sizeof( "clsss" ) - 1           },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "enum",            sizeof( "enum" ) - 1            },
+		{ "enum",            sizeof( "enum" ) - 1            },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "enum class",      sizeof( "enum class" ) - 1      },
+		{ "enum class",      sizeof( "enum class" ) - 1      },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "extern",          sizeof( "extern" ) - 1          },
+		{ "extern",          sizeof( "extern" ) - 1          },
+		{ "friend",          sizeof( "friend" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "module",          sizeof( "module" ) - 1          },
+		{ "namespace",       sizeof( "namespace" ) - 1       },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "operator",        sizeof( "operator" ) - 1        },
+		{ "operator",        sizeof( "operator" ) - 1        },
+		{ "operator",        sizeof( "operator" ) - 1        },
+		{ "operator",        sizeof( "operator" ) - 1        },
+		{ "operator",        sizeof( "operator" ) - 1        },
+		{ "operator",        sizeof( "operator" ) - 1        },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "define",          sizeof( "define" ) - 1          },
+		{ "include",         sizeof( "include" ) - 1         },
+		{ "if",              sizeof( "if" ) - 1              },
+		{ "ifdef",           sizeof( "ifdef" ) - 1           },
+		{ "ifndef",          sizeof( "ifndef" ) - 1          },
+		{ "elif",            sizeof( "elif" ) - 1            },
+		{ "else",            sizeof( "else" ) - 1            },
+		{ "endif",           sizeof( "endif" ) - 1           },
+		{ "pragma",          sizeof( "pragma" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "struct",          sizeof( "struct" ) - 1          },
+		{ "struct",          sizeof( "struct" ) - 1          },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "template",        sizeof( "template" ) - 1        },
+		{ "typedef",         sizeof( "typedef" ) - 1         },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "union",           sizeof( "union" ) - 1           },
+		{ "union",           sizeof( "union" ) - 1           },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
+		{ "using",           sizeof( "using" ) - 1           },
+		{ "using namespace", sizeof( "using namespace" ) - 1 },
+		{ "__NA__",          sizeof( "__NA__" ) - 1          },
 	};
 	return lookup[type];
 }
@@ -4476,53 +4489,53 @@ enum Operator : u32
 inline Str operator_to_str( Operator op )
 {
 	local_persist Str lookup[47] = {
-		{ sizeof( "INVALID" ),  "INVALID"  },
-		{ sizeof( "=" ),        "="        },
-		{ sizeof( "+=" ),       "+="       },
-		{ sizeof( "-=" ),       "-="       },
-		{ sizeof( "*=" ),       "*="       },
-		{ sizeof( "/=" ),       "/="       },
-		{ sizeof( "%=" ),       "%="       },
-		{ sizeof( "&=" ),       "&="       },
-		{ sizeof( "|=" ),       "|="       },
-		{ sizeof( "^=" ),       "^="       },
-		{ sizeof( "<<=" ),      "<<="      },
-		{ sizeof( ">>=" ),      ">>="      },
-		{ sizeof( "++" ),       "++"       },
-		{ sizeof( "--" ),       "--"       },
-		{ sizeof( "+" ),        "+"        },
-		{ sizeof( "-" ),        "-"        },
-		{ sizeof( "!" ),        "!"        },
-		{ sizeof( "+" ),        "+"        },
-		{ sizeof( "-" ),        "-"        },
-		{ sizeof( "*" ),        "*"        },
-		{ sizeof( "/" ),        "/"        },
-		{ sizeof( "%" ),        "%"        },
-		{ sizeof( "~" ),        "~"        },
-		{ sizeof( "&" ),        "&"        },
-		{ sizeof( "|" ),        "|"        },
-		{ sizeof( "^" ),        "^"        },
-		{ sizeof( "<<" ),       "<<"       },
-		{ sizeof( ">>" ),       ">>"       },
-		{ sizeof( "&&" ),       "&&"       },
-		{ sizeof( "||" ),       "||"       },
-		{ sizeof( "==" ),       "=="       },
-		{ sizeof( "!=" ),       "!="       },
-		{ sizeof( "<" ),        "<"        },
-		{ sizeof( ">" ),        ">"        },
-		{ sizeof( "<=" ),       "<="       },
-		{ sizeof( ">=" ),       ">="       },
-		{ sizeof( "[]" ),       "[]"       },
-		{ sizeof( "*" ),        "*"        },
-		{ sizeof( "&" ),        "&"        },
-		{ sizeof( "->" ),       "->"       },
-		{ sizeof( "->*" ),      "->*"      },
-		{ sizeof( "()" ),       "()"       },
-		{ sizeof( "," ),        ","        },
-		{ sizeof( "new" ),      "new"      },
-		{ sizeof( "new[]" ),    "new[]"    },
-		{ sizeof( "delete" ),   "delete"   },
-		{ sizeof( "delete[]" ), "delete[]" },
+		{ "INVALID",  sizeof( "INVALID" ) - 1  },
+		{ "=",        sizeof( "=" ) - 1        },
+		{ "+=",       sizeof( "+=" ) - 1       },
+		{ "-=",       sizeof( "-=" ) - 1       },
+		{ "*=",       sizeof( "*=" ) - 1       },
+		{ "/=",       sizeof( "/=" ) - 1       },
+		{ "%=",       sizeof( "%=" ) - 1       },
+		{ "&=",       sizeof( "&=" ) - 1       },
+		{ "|=",       sizeof( "|=" ) - 1       },
+		{ "^=",       sizeof( "^=" ) - 1       },
+		{ "<<=",      sizeof( "<<=" ) - 1      },
+		{ ">>=",      sizeof( ">>=" ) - 1      },
+		{ "++",       sizeof( "++" ) - 1       },
+		{ "--",       sizeof( "--" ) - 1       },
+		{ "+",        sizeof( "+" ) - 1        },
+		{ "-",        sizeof( "-" ) - 1        },
+		{ "!",        sizeof( "!" ) - 1        },
+		{ "+",        sizeof( "+" ) - 1        },
+		{ "-",        sizeof( "-" ) - 1        },
+		{ "*",        sizeof( "*" ) - 1        },
+		{ "/",        sizeof( "/" ) - 1        },
+		{ "%",        sizeof( "%" ) - 1        },
+		{ "~",        sizeof( "~" ) - 1        },
+		{ "&",        sizeof( "&" ) - 1        },
+		{ "|",        sizeof( "|" ) - 1        },
+		{ "^",        sizeof( "^" ) - 1        },
+		{ "<<",       sizeof( "<<" ) - 1       },
+		{ ">>",       sizeof( ">>" ) - 1       },
+		{ "&&",       sizeof( "&&" ) - 1       },
+		{ "||",       sizeof( "||" ) - 1       },
+		{ "==",       sizeof( "==" ) - 1       },
+		{ "!=",       sizeof( "!=" ) - 1       },
+		{ "<",        sizeof( "<" ) - 1        },
+		{ ">",        sizeof( ">" ) - 1        },
+		{ "<=",       sizeof( "<=" ) - 1       },
+		{ ">=",       sizeof( ">=" ) - 1       },
+		{ "[]",       sizeof( "[]" ) - 1       },
+		{ "*",        sizeof( "*" ) - 1        },
+		{ "&",        sizeof( "&" ) - 1        },
+		{ "->",       sizeof( "->" ) - 1       },
+		{ "->*",      sizeof( "->*" ) - 1      },
+		{ "()",       sizeof( "()" ) - 1       },
+		{ ",",        sizeof( "," ) - 1        },
+		{ "new",      sizeof( "new" ) - 1      },
+		{ "new[]",    sizeof( "new[]" ) - 1    },
+		{ "delete",   sizeof( "delete" ) - 1   },
+		{ "delete[]", sizeof( "delete[]" ) - 1 },
 	};
 	return lookup[op];
 }
@@ -4569,36 +4582,36 @@ enum Specifier : u32
 
 inline Str spec_to_str( Specifier type )
 {
-	local_persist Str lookup[] = {
-		{ sizeof( "INVALID" ),       "INVALID"       },
-		{ sizeof( "consteval" ),     "consteval"     },
-		{ sizeof( "constexpr" ),     "constexpr"     },
-		{ sizeof( "constinit" ),     "constinit"     },
-		{ sizeof( "explicit" ),      "explicit"      },
-		{ sizeof( "extern" ),        "extern"        },
-		{ sizeof( "forceinline" ),   "forceinline"   },
-		{ sizeof( "global" ),        "global"        },
-		{ sizeof( "gb_global" ),     "gb_global"     },
-		{ sizeof( "inline" ),        "inline"        },
-		{ sizeof( "gb_inline" ),     "gb_inline"     },
-		{ sizeof( "internal" ),      "internal"      },
-		{ sizeof( "gb_internal" ),   "gb_internal"   },
-		{ sizeof( "local_persist" ), "local_persist" },
-		{ sizeof( "mutable" ),       "mutable"       },
-		{ sizeof( "neverinline" ),   "neverinline"   },
-		{ sizeof( "*" ),             "*"             },
-		{ sizeof( "&" ),             "&"             },
-		{ sizeof( "register" ),      "register"      },
-		{ sizeof( "&&" ),            "&&"            },
-		{ sizeof( "static" ),        "static"        },
-		{ sizeof( "thread_local" ),  "thread_local"  },
-		{ sizeof( "virtual" ),       "virtual"       },
-		{ sizeof( "const" ),         "const"         },
-		{ sizeof( "final" ),         "final"         },
-		{ sizeof( "noexcept" ),      "noexcept"      },
-		{ sizeof( "override" ),      "override"      },
-		{ sizeof( "= 0" ),           "= 0"           },
-		{ sizeof( "volatile" ),      "volatile"      },
+	local_persist Str lookup[] {
+		{ "INVALID",       sizeof( "INVALID" ) - 1       },
+		{ "consteval",     sizeof( "consteval" ) - 1     },
+		{ "constexpr",     sizeof( "constexpr" ) - 1     },
+		{ "constinit",     sizeof( "constinit" ) - 1     },
+		{ "explicit",      sizeof( "explicit" ) - 1      },
+		{ "extern",        sizeof( "extern" ) - 1        },
+		{ "forceinline",   sizeof( "forceinline" ) - 1   },
+		{ "global",        sizeof( "global" ) - 1        },
+		{ "gb_global",     sizeof( "gb_global" ) - 1     },
+		{ "inline",        sizeof( "inline" ) - 1        },
+		{ "gb_inline",     sizeof( "gb_inline" ) - 1     },
+		{ "internal",      sizeof( "internal" ) - 1      },
+		{ "gb_internal",   sizeof( "gb_internal" ) - 1   },
+		{ "local_persist", sizeof( "local_persist" ) - 1 },
+		{ "mutable",       sizeof( "mutable" ) - 1       },
+		{ "neverinline",   sizeof( "neverinline" ) - 1   },
+		{ "*",             sizeof( "*" ) - 1             },
+		{ "&",             sizeof( "&" ) - 1             },
+		{ "register",      sizeof( "register" ) - 1      },
+		{ "&&",            sizeof( "&&" ) - 1            },
+		{ "static",        sizeof( "static" ) - 1        },
+		{ "thread_local",  sizeof( "thread_local" ) - 1  },
+		{ "virtual",       sizeof( "virtual" ) - 1       },
+		{ "const",         sizeof( "const" ) - 1         },
+		{ "final",         sizeof( "final" ) - 1         },
+		{ "noexcept",      sizeof( "noexcept" ) - 1      },
+		{ "override",      sizeof( "override" ) - 1      },
+		{ "= 0",           sizeof( "= 0" ) - 1           },
+		{ "volatile",      sizeof( "volatile" ) - 1      },
 	};
 	return lookup[type];
 }
@@ -4614,7 +4627,7 @@ inline Specifier str_to_specifier( Str str )
 	do_once_start for ( u32 index = 0; index < Spec_NumSpecifiers; index++ )
 	{
 		Str enum_str  = spec_to_str( (Specifier)index );
-		keymap[index] = crc32( enum_str.Ptr, enum_str.Len - 1 );
+		keymap[index] = crc32( enum_str.Ptr, enum_str.Len );
 	}
 	do_once_end u32 hash = crc32( str.Ptr, str.Len );
 	for ( u32 index = 0; index < Spec_NumSpecifiers; index++ )
@@ -4639,6 +4652,353 @@ forceinline bool is_trailing( Specifier specifier )
 {
 	return spec_is_trailing( specifier );
 }
+
+#define GEN_DEFINE_ATTRIBUTE_TOKENS Entry( Tok_Attribute_GEN_API, "GEN_API" )
+
+enum TokType : u32
+{
+	Tok_Invalid,
+	Tok_Access_Private,
+	Tok_Access_Protected,
+	Tok_Access_Public,
+	Tok_Access_MemberSymbol,
+	Tok_Access_StaticSymbol,
+	Tok_Ampersand,
+	Tok_Ampersand_DBL,
+	Tok_Assign_Classifer,
+	Tok_Attribute_Open,
+	Tok_Attribute_Close,
+	Tok_BraceCurly_Open,
+	Tok_BraceCurly_Close,
+	Tok_BraceSquare_Open,
+	Tok_BraceSquare_Close,
+	Tok_Capture_Start,
+	Tok_Capture_End,
+	Tok_Comment,
+	Tok_Comment_End,
+	Tok_Comment_Start,
+	Tok_Char,
+	Tok_Comma,
+	Tok_Decl_Class,
+	Tok_Decl_GNU_Attribute,
+	Tok_Decl_MSVC_Attribute,
+	Tok_Decl_Enum,
+	Tok_Decl_Extern_Linkage,
+	Tok_Decl_Friend,
+	Tok_Decl_Module,
+	Tok_Decl_Namespace,
+	Tok_Decl_Operator,
+	Tok_Decl_Struct,
+	Tok_Decl_Template,
+	Tok_Decl_Typedef,
+	Tok_Decl_Using,
+	Tok_Decl_Union,
+	Tok_Identifier,
+	Tok_Module_Import,
+	Tok_Module_Export,
+	Tok_NewLine,
+	Tok_Number,
+	Tok_Operator,
+	Tok_Preprocess_Hash,
+	Tok_Preprocess_Define,
+	Tok_Preprocess_If,
+	Tok_Preprocess_IfDef,
+	Tok_Preprocess_IfNotDef,
+	Tok_Preprocess_ElIf,
+	Tok_Preprocess_Else,
+	Tok_Preprocess_EndIf,
+	Tok_Preprocess_Include,
+	Tok_Preprocess_Pragma,
+	Tok_Preprocess_Content,
+	Tok_Preprocess_Macro,
+	Tok_Preprocess_Unsupported,
+	Tok_Spec_Alignas,
+	Tok_Spec_Const,
+	Tok_Spec_Consteval,
+	Tok_Spec_Constexpr,
+	Tok_Spec_Constinit,
+	Tok_Spec_Explicit,
+	Tok_Spec_Extern,
+	Tok_Spec_Final,
+	Tok_Spec_ForceInline,
+	Tok_Spec_Global,
+	Tok_Spec_GB_Global,
+	Tok_Spec_Inline,
+	Tok_Spec_GB_Inline,
+	Tok_Spec_Internal_Linkage,
+	Tok_Spec_GB_Internal,
+	Tok_Spec_LocalPersist,
+	Tok_Spec_Mutable,
+	Tok_Spec_NeverInline,
+	Tok_Spec_Override,
+	Tok_Spec_Static,
+	Tok_Spec_ThreadLocal,
+	Tok_Spec_Volatile,
+	Tok_Spec_Virtual,
+	Tok_Star,
+	Tok_Statement_End,
+	Tok_StaticAssert,
+	Tok_String,
+	Tok_Type_Typename,
+	Tok_Type_Unsigned,
+	Tok_Type_Signed,
+	Tok_Type_Short,
+	Tok_Type_Long,
+	Tok_Type_bool,
+	Tok_Type_char,
+	Tok_Type_int,
+	Tok_Type_double,
+	Tok_Type_MS_int8,
+	Tok_Type_MS_int16,
+	Tok_Type_MS_int32,
+	Tok_Type_MS_int64,
+	Tok_Type_MS_W64,
+	Tok_Varadic_Argument,
+	Tok___Attributes_Start,
+	Tok_Attribute_GEN_API,
+	Tok_NumTokens
+};
+
+inline Str toktype_to_str( TokType type )
+{
+	local_persist Str lookup[] = {
+		{ "__invalid__",       sizeof( "__invalid__" ) - 1       },
+		{ "private",           sizeof( "private" ) - 1           },
+		{ "protected",         sizeof( "protected" ) - 1         },
+		{ "public",            sizeof( "public" ) - 1            },
+		{ ".",		         sizeof( "." ) - 1                 },
+		{ "::",		        sizeof( "::" ) - 1                },
+		{ "&",		         sizeof( "&" ) - 1                 },
+		{ "&&",		        sizeof( "&&" ) - 1                },
+		{ ":",		         sizeof( ":" ) - 1                 },
+		{ "[[",		        sizeof( "[[" ) - 1                },
+		{ "]]",		        sizeof( "]]" ) - 1                },
+		{ "{",		         sizeof( "{" ) - 1                 },
+		{ "}",		         sizeof( "}" ) - 1                 },
+		{ "[",		         sizeof( "[" ) - 1                 },
+		{ "]",		         sizeof( "]" ) - 1                 },
+		{ "(",		         sizeof( "(" ) - 1                 },
+		{ ")",		         sizeof( ")" ) - 1                 },
+		{ "__comment__",       sizeof( "__comment__" ) - 1       },
+		{ "__comment_end__",   sizeof( "__comment_end__" ) - 1   },
+		{ "__comment_start__", sizeof( "__comment_start__" ) - 1 },
+		{ "__character__",     sizeof( "__character__" ) - 1     },
+		{ ",",		         sizeof( "," ) - 1                 },
+		{ "class",             sizeof( "class" ) - 1             },
+		{ "__attribute__",     sizeof( "__attribute__" ) - 1     },
+		{ "__declspec",        sizeof( "__declspec" ) - 1        },
+		{ "enum",              sizeof( "enum" ) - 1              },
+		{ "extern",            sizeof( "extern" ) - 1            },
+		{ "friend",            sizeof( "friend" ) - 1            },
+		{ "module",            sizeof( "module" ) - 1            },
+		{ "namespace",         sizeof( "namespace" ) - 1         },
+		{ "operator",          sizeof( "operator" ) - 1          },
+		{ "struct",            sizeof( "struct" ) - 1            },
+		{ "template",          sizeof( "template" ) - 1          },
+		{ "typedef",           sizeof( "typedef" ) - 1           },
+		{ "using",             sizeof( "using" ) - 1             },
+		{ "union",             sizeof( "union" ) - 1             },
+		{ "__identifier__",    sizeof( "__identifier__" ) - 1    },
+		{ "import",            sizeof( "import" ) - 1            },
+		{ "export",            sizeof( "export" ) - 1            },
+		{ "__new_line__",      sizeof( "__new_line__" ) - 1      },
+		{ "__number__",        sizeof( "__number__" ) - 1        },
+		{ "__operator__",      sizeof( "__operator__" ) - 1      },
+		{ "#",		         sizeof( "#" ) - 1                 },
+		{ "define",            sizeof( "define" ) - 1            },
+		{ "if",		        sizeof( "if" ) - 1                },
+		{ "ifdef",             sizeof( "ifdef" ) - 1             },
+		{ "ifndef",            sizeof( "ifndef" ) - 1            },
+		{ "elif",              sizeof( "elif" ) - 1              },
+		{ "else",              sizeof( "else" ) - 1              },
+		{ "endif",             sizeof( "endif" ) - 1             },
+		{ "include",           sizeof( "include" ) - 1           },
+		{ "pragma",            sizeof( "pragma" ) - 1            },
+		{ "__macro_content__", sizeof( "__macro_content__" ) - 1 },
+		{ "__macro__",         sizeof( "__macro__" ) - 1         },
+		{ "__unsupported__",   sizeof( "__unsupported__" ) - 1   },
+		{ "alignas",           sizeof( "alignas" ) - 1           },
+		{ "const",             sizeof( "const" ) - 1             },
+		{ "consteval",         sizeof( "consteval" ) - 1         },
+		{ "constexpr",         sizeof( "constexpr" ) - 1         },
+		{ "constinit",         sizeof( "constinit" ) - 1         },
+		{ "explicit",          sizeof( "explicit" ) - 1          },
+		{ "extern",            sizeof( "extern" ) - 1            },
+		{ "final",             sizeof( "final" ) - 1             },
+		{ "forceinline",       sizeof( "forceinline" ) - 1       },
+		{ "global",            sizeof( "global" ) - 1            },
+		{ "gb_global",         sizeof( "gb_global" ) - 1         },
+		{ "inline",            sizeof( "inline" ) - 1            },
+		{ "gb_inline",         sizeof( "gb_inline" ) - 1         },
+		{ "internal",          sizeof( "internal" ) - 1          },
+		{ "gb_internal",       sizeof( "gb_internal" ) - 1       },
+		{ "local_persist",     sizeof( "local_persist" ) - 1     },
+		{ "mutable",           sizeof( "mutable" ) - 1           },
+		{ "neverinline",       sizeof( "neverinline" ) - 1       },
+		{ "override",          sizeof( "override" ) - 1          },
+		{ "static",            sizeof( "static" ) - 1            },
+		{ "thread_local",      sizeof( "thread_local" ) - 1      },
+		{ "volatile",          sizeof( "volatile" ) - 1          },
+		{ "virtual",           sizeof( "virtual" ) - 1           },
+		{ "*",		         sizeof( "*" ) - 1                 },
+		{ ";",		         sizeof( ";" ) - 1                 },
+		{ "static_assert",     sizeof( "static_assert" ) - 1     },
+		{ "__string__",        sizeof( "__string__" ) - 1        },
+		{ "typename",          sizeof( "typename" ) - 1          },
+		{ "unsigned",          sizeof( "unsigned" ) - 1          },
+		{ "signed",            sizeof( "signed" ) - 1            },
+		{ "short",             sizeof( "short" ) - 1             },
+		{ "long",              sizeof( "long" ) - 1              },
+		{ "bool",              sizeof( "bool" ) - 1              },
+		{ "char",              sizeof( "char" ) - 1              },
+		{ "int",               sizeof( "int" ) - 1               },
+		{ "double",            sizeof( "double" ) - 1            },
+		{ "__int8",            sizeof( "__int8" ) - 1            },
+		{ "__int16",           sizeof( "__int16" ) - 1           },
+		{ "__int32",           sizeof( "__int32" ) - 1           },
+		{ "__int64",           sizeof( "__int64" ) - 1           },
+		{ "_W64",              sizeof( "_W64" ) - 1              },
+		{ "...",               sizeof( "..." ) - 1               },
+		{ "__attrib_start__",  sizeof( "__attrib_start__" ) - 1  },
+		{ "GEN_API",           sizeof( "GEN_API" ) - 1           },
+	};
+	return lookup[type];
+}
+
+inline TokType str_to_toktype( Str str )
+{
+	local_persist u32 keymap[Tok_NumTokens];
+	do_once_start for ( u32 index = 0; index < Tok_NumTokens; index++ )
+	{
+		Str enum_str  = toktype_to_str( (TokType)index );
+		keymap[index] = crc32( enum_str.Ptr, enum_str.Len );
+	}
+	do_once_end u32 hash = crc32( str.Ptr, str.Len );
+	for ( u32 index = 0; index < Tok_NumTokens; index++ )
+	{
+		if ( keymap[index] == hash )
+			return (TokType)index;
+	}
+	return Tok_Invalid;
+}
+
+enum TokFlags : u32
+{
+	TF_Operator		   = bit(0),
+	TF_Assign          = bit(1),
+	TF_Preprocess      = bit(2),
+	TF_Preprocess_Cond = bit(3),
+	TF_Attribute       = bit(6),
+	TF_AccessOperator  = bit( 7 ),
+	TF_AccessSpecifier = bit( 8 ),
+	TF_Specifier       = bit( 9 ),
+	TF_EndDefinition   = bit( 10 ),    // Either ; or }
+	TF_Formatting      = bit( 11 ),
+	TF_Literal         = bit( 12 ),
+
+	TF_Null = 0,
+	TF_UnderlyingType = GEN_U32_MAX,
+};
+
+struct Token
+{
+	Str     Text;
+	TokType Type;
+	s32     Line;
+	s32     Column;
+	u32     Flags;
+};
+
+constexpr Token NullToken { {}, Tok_Invalid, 0, 0, TF_Null };
+
+forceinline
+AccessSpec tok_to_access_specifier(Token tok) {
+	return scast(AccessSpec, tok.Type);
+}
+
+forceinline
+Str tok_to_str(Token tok) {
+	return tok.Text;
+}
+
+forceinline
+bool tok_is_valid( Token tok ) {
+	return tok.Text.Ptr && tok.Text.Len && tok.Type != Tok_Invalid;
+}
+
+forceinline
+bool tok_is_access_operator(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_AccessOperator );
+}
+
+forceinline
+bool tok_is_access_specifier(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_AccessSpecifier );
+}
+
+forceinline
+bool tok_is_attribute(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_Attribute );
+}
+
+forceinline
+bool tok_is_operator(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_Operator );
+}
+
+forceinline
+bool tok_is_preprocessor(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_Preprocess );
+}
+
+forceinline
+bool tok_is_preprocess_cond(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_Preprocess_Cond );
+}
+
+forceinline
+bool tok_is_specifier(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_Specifier );
+}
+
+forceinline
+bool tok_is_end_definition(Token tok) {
+	return bitfield_is_equal( u32, tok.Flags, TF_EndDefinition );
+}
+
+StrBuilder tok_to_strbuilder(Token tok);
+
+struct TokArray 
+{
+	Array(Token) Arr;
+	s32          Idx;
+};
+
+struct LexContext
+{
+	Str             content;
+	s32             left;
+	char const*     scanner;
+	s32             line;
+	s32             column;
+	StringTable     defines;
+	Token           token;
+};
+
+struct StackNode
+{
+	StackNode* Prev;
+
+	Token* Start;
+	Str    Name;          // The name of the AST node (if parsed)
+	Str    ProcName;    // The name of the procedure
+};
+
+struct ParseContext
+{
+	TokArray   Tokens;
+	StackNode* Scope;
+};
 
 #pragma endregion Types
 
@@ -4868,40 +5228,25 @@ struct CodeUsing;
 struct CodeVar;
 #endif
 
-GEN_NS_PARSER_BEGIN
-
-struct Token;
-
-GEN_NS_PARSER_END
-
-#if GEN_COMPILER_CPP
-// Note(Ed): This is to alleviate an edge case with parsing usings or typedefs where I don't really have it setup
-// to parse a 'namespace' macro or a type with a macro.
-// I have ideas for ways to pack that into the typedef/using ast, but for now just keeping it like this
-#define ParserTokenType GEN_NS_PARSER Token
-typedef ParserTokenType Token;
-#undef ParserTokenType
-#endif
-
 #if GEN_COMPILER_CPP
 template< class Type> forceinline Type tmpl_cast( Code self ) { return * rcast( Type*, & self ); }
 #endif
 
 #pragma region Code C-Interface
 
-void   code_append       (Code code, Code other );
-Str   code_debug_str    (Code code);
-Code   code_duplicate    (Code code);
-Code*  code_entry        (Code code, u32 idx );
-bool   code_has_entries  (Code code);
-bool   code_is_body      (Code code);
-bool   code_is_equal     (Code code, Code other);
-bool   code_is_valid     (Code code);
-void   code_set_global   (Code code);
-StrBuilder code_to_string    (Code self );
-void   code_to_strbuilder_ptr(Code self, StrBuilder* result );
-Str   code_type_str     (Code self );
-bool   code_validate_body(Code self );
+GEN_API void       code_append           (Code code, Code other );
+GEN_API Str        code_debug_str        (Code code);
+GEN_API Code       code_duplicate        (Code code);
+GEN_API Code*      code_entry            (Code code, u32 idx );
+GEN_API bool       code_has_entries      (Code code);
+GEN_API bool       code_is_body          (Code code);
+GEN_API bool       code_is_equal         (Code code, Code other);
+GEN_API bool       code_is_valid         (Code code);
+GEN_API void       code_set_global       (Code code);
+GEN_API StrBuilder code_to_strbuilder    (Code self );
+GEN_API void       code_to_strbuilder_ptr(Code self, StrBuilder* result );
+GEN_API Str        code_type_str         (Code self );
+GEN_API bool       code_validate_body    (Code self );
 
 #pragma endregion Code C-Interface
 
@@ -4916,7 +5261,7 @@ struct Code
 	AST* ast;
 
 #	define Using_Code( Typename )                                                        \
-	forceinline Str debug_str()                { return code_debug_str(* this); }       \
+	forceinline Str  debug_str()                { return code_debug_str(* this); }       \
 	forceinline Code duplicate()                { return code_duplicate(* this); }	     \
 	forceinline bool is_equal( Code other )     { return code_is_equal(* this, other); } \
 	forceinline bool is_body()                  { return code_is_body(* this); }         \
@@ -4933,17 +5278,17 @@ struct Code
 
 #if ! GEN_C_LIKE_CPP
 	Using_Code( Code );
-	forceinline void   append(Code other)        { return code_append(* this, other); }
-	forceinline Code*  entry(u32 idx)            { return code_entry(* this, idx); }
-	forceinline bool   has_entries()             { return code_has_entries(* this); }
-	forceinline StrBuilder to_string()               { return code_to_string(* this); }
-	forceinline void   to_string(StrBuilder& result) { return code_to_strbuilder_ptr(* this, & result); }
-	forceinline Str   type_str()                { return code_type_str(* this); }
-	forceinline bool   validate_body()           { return code_validate_body(*this); }
+	forceinline void       append(Code other)                { return code_append(* this, other); }
+	forceinline Code*      entry(u32 idx)                    { return code_entry(* this, idx); }
+	forceinline bool       has_entries()                     { return code_has_entries(* this); }
+	forceinline StrBuilder to_strbuilder()                   { return code_to_strbuilder(* this); }
+	forceinline void       to_strbuilder(StrBuilder& result) { return code_to_strbuilder_ptr(* this, & result); }
+	forceinline Str        type_str()                        { return code_type_str(* this); }
+	forceinline bool       validate_body()                   { return code_validate_body(*this); }
 #endif
 
 	Using_CodeOps( Code );
-	forceinline Code operator *() { return * this; }
+	forceinline Code operator *() { return * this; } // Required to support for-range iteration.
 	forceinline AST* operator ->() { return ast; }
 
 	Code& operator ++();
@@ -5006,7 +5351,7 @@ int AST_ArrSpecs_Cap =
 (
 	AST_POD_Size
 	- sizeof(Code)
-	- sizeof(StringCached)
+	- sizeof(StrCached)
 	- sizeof(Code) * 2
 	- sizeof(Token*)
 	- sizeof(Code)
@@ -5052,13 +5397,13 @@ struct AST
 				Code  PostNameMacro;    // Only used with parameters for specifically UE_REQUIRES (Thanks Unreal)
 			};
 		};
-		StringCached  Content;          // Attributes, Comment, Execution, Include
+		StrCached  Content;          // Attributes, Comment, Execution, Include
 		struct {
 			Specifier  ArrSpecs[AST_ArrSpecs_Cap]; // Specifiers
 			Code       NextSpecs;              // Specifiers; If ArrSpecs is full, then NextSpecs is used.
 		};
 	};
-	StringCached      Name;
+	StrCached      Name;
 	union {
 		Code Prev;
 		Code Front;
@@ -5118,128 +5463,128 @@ struct NullCode_ImplicitCaster;
 
 #pragma region Code Type C-Interface
 
-void   body_append          ( CodeBody body, Code     other );
-void   body_append_body     ( CodeBody body, CodeBody other );
-StrBuilder body_to_string       ( CodeBody body );
-void   body_to_strbuilder_ref   ( CodeBody body, StrBuilder* result );
-void   body_to_strbuilder_export( CodeBody body, StrBuilder* result );
+GEN_API void       body_append              ( CodeBody body, Code     other );
+GEN_API void       body_append_body         ( CodeBody body, CodeBody other );
+GEN_API StrBuilder body_to_strbuilder       ( CodeBody body );
+GEN_API void       body_to_strbuilder_ref   ( CodeBody body, StrBuilder* result );
+GEN_API void       body_to_strbuilder_export( CodeBody body, StrBuilder* result );
 
-Code begin_CodeBody( CodeBody body);
-Code end_CodeBody  ( CodeBody body );
-Code next_CodeBody ( CodeBody body, Code entry_iter );
+GEN_API Code begin_CodeBody( CodeBody body);
+GEN_API Code end_CodeBody  ( CodeBody body );
+GEN_API Code next_CodeBody ( CodeBody body, Code entry_iter );
 
-void   class_add_interface( CodeClass self, CodeTypename interface );
-StrBuilder class_to_string    ( CodeClass self );
-void   class_to_strbuilder_def( CodeClass self, StrBuilder* result );
-void   class_to_strbuilder_fwd( CodeClass self, StrBuilder* result );
+GEN_API void       class_add_interface    ( CodeClass self, CodeTypename interface );
+GEN_API StrBuilder class_to_strbuilder    ( CodeClass self );
+GEN_API void       class_to_strbuilder_def( CodeClass self, StrBuilder* result );
+GEN_API void       class_to_strbuilder_fwd( CodeClass self, StrBuilder* result );
 
-void       params_append       (CodeParams params, CodeParams param );
-CodeParams params_get          (CodeParams params, s32 idx);
-bool       params_has_entries  (CodeParams params );
-StrBuilder     params_to_string    (CodeParams params );
-void       params_to_strbuilder_ref(CodeParams params, StrBuilder* result );
+GEN_API void       params_append           (CodeParams params, CodeParams param );
+GEN_API CodeParams params_get              (CodeParams params, s32 idx);
+GEN_API bool       params_has_entries      (CodeParams params );
+GEN_API StrBuilder params_to_strbuilder    (CodeParams params );
+GEN_API void       params_to_strbuilder_ref(CodeParams params, StrBuilder* result );
 
-CodeParams begin_CodeParams(CodeParams params);
-CodeParams end_CodeParams  (CodeParams params);
-CodeParams next_CodeParams (CodeParams params, CodeParams entry_iter);
+GEN_API CodeParams begin_CodeParams(CodeParams params);
+GEN_API CodeParams end_CodeParams  (CodeParams params);
+GEN_API CodeParams next_CodeParams (CodeParams params, CodeParams entry_iter);
 
-bool   specifiers_append       (CodeSpecifiers specifiers, Specifier spec);
-s32    specifiers_has          (CodeSpecifiers specifiers, Specifier spec);
-s32    specifiers_remove       (CodeSpecifiers specifiers, Specifier to_remove );
-StrBuilder specifiers_to_string    (CodeSpecifiers specifiers);
-void   specifiers_to_strbuilder_ref(CodeSpecifiers specifiers, StrBuilder* result);
+GEN_API bool       specifiers_append           (CodeSpecifiers specifiers, Specifier spec);
+GEN_API s32        specifiers_has              (CodeSpecifiers specifiers, Specifier spec);
+GEN_API s32        specifiers_remove           (CodeSpecifiers specifiers, Specifier to_remove );
+GEN_API StrBuilder specifiers_to_strbuilder    (CodeSpecifiers specifiers);
+GEN_API void       specifiers_to_strbuilder_ref(CodeSpecifiers specifiers, StrBuilder* result);
 
-Specifier* begin_CodeSpecifiers(CodeSpecifiers specifiers);
-Specifier* end_CodeSpecifiers  (CodeSpecifiers specifiers);
-Specifier* next_CodeSpecifiers (CodeSpecifiers specifiers, Specifier* spec_iter);
+GEN_API Specifier* begin_CodeSpecifiers(CodeSpecifiers specifiers);
+GEN_API Specifier* end_CodeSpecifiers  (CodeSpecifiers specifiers);
+GEN_API Specifier* next_CodeSpecifiers (CodeSpecifiers specifiers, Specifier* spec_iter);
 
-void   struct_add_interface(CodeStruct self, CodeTypename interface);
-StrBuilder struct_to_string    (CodeStruct self);
-void   struct_to_strbuilder_fwd(CodeStruct self, StrBuilder* result);
-void   struct_to_strbuilder_def(CodeStruct self, StrBuilder* result);
+GEN_API void       struct_add_interface    (CodeStruct self, CodeTypename interface);
+GEN_API StrBuilder struct_to_strbuilder    (CodeStruct self);
+GEN_API void       struct_to_strbuilder_fwd(CodeStruct self, StrBuilder* result);
+GEN_API void       struct_to_strbuilder_def(CodeStruct self, StrBuilder* result);
 
-StrBuilder attributes_to_string    (CodeAttributes attributes);
-void   attributes_to_strbuilder_ref(CodeAttributes attributes, StrBuilder* result);
+GEN_API StrBuilder attributes_to_strbuilder    (CodeAttributes attributes);
+GEN_API void       attributes_to_strbuilder_ref(CodeAttributes attributes, StrBuilder* result);
 
-StrBuilder comment_to_string    (CodeComment comment );
-void   comment_to_strbuilder_ref(CodeComment comment, StrBuilder* result );
+GEN_API StrBuilder comment_to_strbuilder    (CodeComment comment );
+GEN_API void       comment_to_strbuilder_ref(CodeComment comment, StrBuilder* result );
 
-StrBuilder constructor_to_string    (CodeConstructor constructor);
-void   constructor_to_strbuilder_def(CodeConstructor constructor, StrBuilder* result );
-void   constructor_to_strbuilder_fwd(CodeConstructor constructor, StrBuilder* result );
+GEN_API StrBuilder constructor_to_strbuilder    (CodeConstructor constructor);
+GEN_API void       constructor_to_strbuilder_def(CodeConstructor constructor, StrBuilder* result );
+GEN_API void       constructor_to_strbuilder_fwd(CodeConstructor constructor, StrBuilder* result );
 
-StrBuilder define_to_string    (CodeDefine self);
-void   define_to_strbuilder_ref(CodeDefine self, StrBuilder* result);
+GEN_API StrBuilder define_to_strbuilder    (CodeDefine self);
+GEN_API void       define_to_strbuilder_ref(CodeDefine self, StrBuilder* result);
 
-StrBuilder destructor_to_string    (CodeDestructor destructor);
-void   destructor_to_strbuilder_def(CodeDestructor destructor, StrBuilder* result );
-void   destructor_to_strbuilder_fwd(CodeDestructor destructor, StrBuilder* result );
+GEN_API StrBuilder destructor_to_strbuilder    (CodeDestructor destructor);
+GEN_API void       destructor_to_strbuilder_fwd(CodeDestructor destructor, StrBuilder* result );
+GEN_API void       destructor_to_strbuilder_def(CodeDestructor destructor, StrBuilder* result );
 
-StrBuilder enum_to_string          (CodeEnum self);
-void   enum_to_strbuilder_def      (CodeEnum self, StrBuilder* result );
-void   enum_to_strbuilder_fwd      (CodeEnum self, StrBuilder* result );
-void   enum_to_strbuilder_class_def(CodeEnum self, StrBuilder* result );
-void   enum_to_strbuilder_class_fwd(CodeEnum self, StrBuilder* result );
+GEN_API StrBuilder enum_to_strbuilder          (CodeEnum self);
+GEN_API void       enum_to_strbuilder_def      (CodeEnum self, StrBuilder* result );
+GEN_API void       enum_to_strbuilder_fwd      (CodeEnum self, StrBuilder* result );
+GEN_API void       enum_to_strbuilder_class_def(CodeEnum self, StrBuilder* result );
+GEN_API void       enum_to_strbuilder_class_fwd(CodeEnum self, StrBuilder* result );
 
-StrBuilder exec_to_string    (CodeExec exec);
-void   exec_to_strbuilder_ref(CodeExec exec, StrBuilder* result);
+GEN_API StrBuilder exec_to_strbuilder    (CodeExec exec);
+GEN_API void       exec_to_strbuilder_ref(CodeExec exec, StrBuilder* result);
 
-void extern_to_string(CodeExtern self, StrBuilder* result);
+GEN_API void extern_to_strbuilder(CodeExtern self, StrBuilder* result);
 
-StrBuilder include_to_string    (CodeInclude self);
-void   include_to_strbuilder_ref(CodeInclude self, StrBuilder* result);
+GEN_API StrBuilder include_to_strbuilder    (CodeInclude self);
+GEN_API void       include_to_strbuilder_ref(CodeInclude self, StrBuilder* result);
 
-StrBuilder friend_to_string     (CodeFriend self);
-void   friend_to_strbuilder_ref(CodeFriend self, StrBuilder* result);
+GEN_API StrBuilder friend_to_strbuilder     (CodeFriend self);
+GEN_API void       friend_to_strbuilder_ref(CodeFriend self, StrBuilder* result);
 
-StrBuilder fn_to_string    (CodeFn self);
-void   fn_to_strbuilder_def(CodeFn self, StrBuilder* result);
-void   fn_to_strbuilder_fwd(CodeFn self, StrBuilder* result);
+GEN_API StrBuilder fn_to_strbuilder    (CodeFn self);
+GEN_API void       fn_to_strbuilder_def(CodeFn self, StrBuilder* result);
+GEN_API void       fn_to_strbuilder_fwd(CodeFn self, StrBuilder* result);
 
-StrBuilder module_to_string    (CodeModule self);
-void   module_to_strbuilder_ref(CodeModule self, StrBuilder* result);
+GEN_API StrBuilder module_to_strbuilder    (CodeModule self);
+GEN_API void       module_to_strbuilder_ref(CodeModule self, StrBuilder* result);
 
-StrBuilder namespace_to_string    (CodeNS self);
-void   namespace_to_strbuilder_ref(CodeNS self, StrBuilder* result);
+GEN_API StrBuilder namespace_to_strbuilder    (CodeNS self);
+GEN_API void       namespace_to_strbuilder_ref(CodeNS self, StrBuilder* result);
 
-StrBuilder code_op_to_string    (CodeOperator self);
-void   code_op_to_strbuilder_fwd(CodeOperator self, StrBuilder* result );
-void   code_op_to_strbuilder_def(CodeOperator self, StrBuilder* result );
+GEN_API StrBuilder code_op_to_strbuilder    (CodeOperator self);
+GEN_API void       code_op_to_strbuilder_fwd(CodeOperator self, StrBuilder* result );
+GEN_API void       code_op_to_strbuilder_def(CodeOperator self, StrBuilder* result );
 
-StrBuilder opcast_to_string     (CodeOpCast op_cast );
-void   opcast_to_strbuilder_def(CodeOpCast op_cast, StrBuilder* result );
-void   opcast_to_strbuilder_fwd(CodeOpCast op_cast, StrBuilder* result );
+GEN_API StrBuilder opcast_to_strbuilder     (CodeOpCast op_cast );
+GEN_API void       opcast_to_strbuilder_def(CodeOpCast op_cast, StrBuilder* result );
+GEN_API void       opcast_to_strbuilder_fwd(CodeOpCast op_cast, StrBuilder* result );
 
-StrBuilder pragma_to_string    (CodePragma self);
-void   pragma_to_strbuilder_ref(CodePragma self, StrBuilder* result);
+GEN_API StrBuilder pragma_to_strbuilder    (CodePragma self);
+GEN_API void       pragma_to_strbuilder_ref(CodePragma self, StrBuilder* result);
 
-StrBuilder preprocess_to_string       (CodePreprocessCond cond);
-void   preprocess_to_strbuilder_if    (CodePreprocessCond cond, StrBuilder* result );
-void   preprocess_to_strbuilder_ifdef (CodePreprocessCond cond, StrBuilder* result );
-void   preprocess_to_strbuilder_ifndef(CodePreprocessCond cond, StrBuilder* result );
-void   preprocess_to_strbuilder_elif  (CodePreprocessCond cond, StrBuilder* result );
-void   preprocess_to_strbuilder_else  (CodePreprocessCond cond, StrBuilder* result );
-void   preprocess_to_strbuilder_endif (CodePreprocessCond cond, StrBuilder* result );
+GEN_API StrBuilder preprocess_to_strbuilder       (CodePreprocessCond cond);
+GEN_API void       preprocess_to_strbuilder_if    (CodePreprocessCond cond, StrBuilder* result );
+GEN_API void       preprocess_to_strbuilder_ifdef (CodePreprocessCond cond, StrBuilder* result );
+GEN_API void       preprocess_to_strbuilder_ifndef(CodePreprocessCond cond, StrBuilder* result );
+GEN_API void       preprocess_to_strbuilder_elif  (CodePreprocessCond cond, StrBuilder* result );
+GEN_API void       preprocess_to_strbuilder_else  (CodePreprocessCond cond, StrBuilder* result );
+GEN_API void       preprocess_to_strbuilder_endif (CodePreprocessCond cond, StrBuilder* result );
 
-StrBuilder template_to_string    (CodeTemplate self);
-void   template_to_strbuilder_ref(CodeTemplate self, StrBuilder* result);
+GEN_API StrBuilder template_to_strbuilder    (CodeTemplate self);
+GEN_API void       template_to_strbuilder_ref(CodeTemplate self, StrBuilder* result);
 
-StrBuilder typename_to_string    (CodeTypename self);
-void   typename_to_strbuilder_ref(CodeTypename self, StrBuilder* result);
+GEN_API StrBuilder typename_to_strbuilder    (CodeTypename self);
+GEN_API void       typename_to_strbuilder_ref(CodeTypename self, StrBuilder* result);
 
-StrBuilder typedef_to_string    (CodeTypedef self);
-void   typedef_to_strbuilder_ref(CodeTypedef self, StrBuilder* result );
+GEN_API StrBuilder typedef_to_strbuilder    (CodeTypedef self);
+GEN_API void       typedef_to_strbuilder_ref(CodeTypedef self, StrBuilder* result );
 
-StrBuilder union_to_string    (CodeUnion self);
-void   union_to_strbuilder_def(CodeUnion self, StrBuilder* result);
-void   union_to_strbuilder_fwd(CodeUnion self, StrBuilder* result);
+GEN_API StrBuilder union_to_strbuilder    (CodeUnion self);
+GEN_API void       union_to_strbuilder_def(CodeUnion self, StrBuilder* result);
+GEN_API void       union_to_strbuilder_fwd(CodeUnion self, StrBuilder* result);
 
-StrBuilder using_to_string    (CodeUsing op_cast );
-void   using_to_strbuilder_ref(CodeUsing op_cast, StrBuilder* result );
-void   using_to_strbuilder_ns (CodeUsing op_cast, StrBuilder* result );
+GEN_API StrBuilder using_to_strbuilder    (CodeUsing op_cast );
+GEN_API void       using_to_strbuilder_ref(CodeUsing op_cast, StrBuilder* result );
+GEN_API void       using_to_strbuilder_ns (CodeUsing op_cast, StrBuilder* result );
 
-StrBuilder var_to_string    (CodeVar self);
-void   var_to_strbuilder_ref(CodeVar self, StrBuilder* result);
+GEN_API StrBuilder var_to_strbuilder    (CodeVar self);
+GEN_API void       var_to_strbuilder_ref(CodeVar self, StrBuilder* result);
 
 #pragma endregion Code Type C-Interface
 
@@ -5255,16 +5600,16 @@ struct CodeBody
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeBody );
-	forceinline void   append( Code other )               { return body_append( *this, other ); }
-	forceinline void   append( CodeBody body )            { return body_append(*this, body); }
-	forceinline bool   has_entries()                      { return code_has_entries(* this); }
-	forceinline StrBuilder to_string()                        { return body_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result )        { return body_to_strbuilder_ref(* this, & result ); }
-	forceinline void   to_strbuilder_export( StrBuilder& result ) { return body_to_strbuilder_export(* this, & result); }
+	forceinline void       append( Code other )                       { return body_append( *this, other ); }
+	forceinline void       append( CodeBody body )                    { return body_append(*this, body); }
+	forceinline bool       has_entries()                              { return code_has_entries(* this); }
+	forceinline StrBuilder to_strbuilder()                            { return body_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result )        { return body_to_strbuilder_ref(* this, & result ); }
+	forceinline void       to_strbuilder_export( StrBuilder& result ) { return body_to_strbuilder_export(* this, & result); }
 
+#endif
 	forceinline Code begin() { return begin_CodeBody(* this); }
 	forceinline Code end()   { return end_CodeBody(* this); }
-#endif
 	Using_CodeOps( CodeBody );
 	forceinline operator Code() { return * rcast( Code*, this ); }
 	forceinline AST_Body* operator->() { return ast; }
@@ -5275,10 +5620,10 @@ struct CodeClass
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeClass );
-	forceinline void   add_interface( CodeType interface );
-	forceinline StrBuilder to_string();
-	forceinline void   to_strbuilder_def( StrBuilder& result );
-	forceinline void   to_strbuilder_fwd( StrBuilder& result );
+	forceinline void       add_interface( CodeType interface );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder_def( StrBuilder& result );
+	forceinline void       to_strbuilder_fwd( StrBuilder& result );
 #endif
 	Using_CodeOps( CodeClass );
 	forceinline operator Code() { return * rcast( Code*, this ); }
@@ -5293,18 +5638,18 @@ struct CodeParams
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeParams );
-	forceinline void      append( CodeParams other );
-	forceinline CodeParams get( s32 idx );
-	forceinline bool      has_entries();
-	forceinline StrBuilder    to_string();
-	forceinline void      to_string( StrBuilder& result );
+	forceinline void          append( CodeParams other );
+	forceinline CodeParams    get( s32 idx );
+	forceinline bool          has_entries();
+	forceinline StrBuilder    to_strbuilder();
+	forceinline void          to_strbuilder( StrBuilder& result );
 
-	forceinline CodeParams begin() { return begin_CodeParams(* this); }
-	forceinline CodeParams end()   { return end_CodeParams(* this); }
 #endif
 	Using_CodeOps( CodeParams );
-	forceinline operator Code()       { return { (AST*)ast }; }
-	forceinline CodeParams operator*() { return * this; }
+	forceinline CodeParams begin() { return begin_CodeParams(* this); }
+	forceinline CodeParams end()   { return end_CodeParams(* this); }
+	forceinline operator Code() { return { (AST*)ast }; }
+	forceinline CodeParams  operator *() { return * this; } // Required to support for-range iteration.
 	forceinline AST_Params* operator->() {
 		GEN_ASSERT(ast);
 		return ast;
@@ -5317,14 +5662,15 @@ struct CodeSpecifiers
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeSpecifiers );
-	bool   append( Specifier spec )       { return specifiers_append(* this, spec); }
-	s32    has( Specifier spec )          { return specifiers_has(* this, spec); }
-	s32    remove( Specifier to_remove )  { return specifiers_remove(* this, to_remove); }
-	StrBuilder to_string()                    { return specifiers_to_string(* this ); }
-	void   to_string( StrBuilder& result )    { return specifiers_to_strbuilder_ref(* this, & result); }
+	bool       append( Specifier spec )            { return specifiers_append(* this, spec); }
+	s32        has( Specifier spec )               { return specifiers_has(* this, spec); }
+	s32        remove( Specifier to_remove )       { return specifiers_remove(* this, to_remove); }
+	StrBuilder to_strbuilder()                     { return specifiers_to_strbuilder(* this ); }
+	void       to_strbuilder( StrBuilder& result ) { return specifiers_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeSpecifiers);
 	forceinline operator Code() { return { (AST*) ast }; }
+	forceinline Code            operator *() { return * this; } // Required to support for-range iteration.
 	forceinline AST_Specifiers* operator->() {
 		GEN_ASSERT(ast);
 		return ast;
@@ -5336,8 +5682,8 @@ struct CodeAttributes
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code(CodeAttributes);
-	forceinline StrBuilder to_string()               { return attributes_to_string(* this); }
-	forceinline void   to_string(StrBuilder& result) { return attributes_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                   { return attributes_to_strbuilder(* this); }
+	forceinline void       to_strbuilder(StrBuilder& result) { return attributes_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeAttributes);
 	operator Code();
@@ -5351,8 +5697,8 @@ struct CodeComment
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code(CodeComment);
-	forceinline StrBuilder to_string()               { return comment_to_string    (* this); }
-	forceinline void   to_string(StrBuilder& result) { return comment_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                   { return comment_to_strbuilder    (* this); }
+	forceinline void       to_strbuilder(StrBuilder& result) { return comment_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeComment);
 	operator Code();
@@ -5364,9 +5710,9 @@ struct CodeConstructor
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeConstructor );
-	forceinline StrBuilder to_string()                     { return constructor_to_string(* this); }
-	forceinline void   to_strbuilder_def( StrBuilder& result ) { return constructor_to_strbuilder_def(* this, & result); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result ) { return constructor_to_strbuilder_fwd(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                         { return constructor_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_def( StrBuilder& result ) { return constructor_to_strbuilder_def(* this, & result); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result ) { return constructor_to_strbuilder_fwd(* this, & result); }
 #endif
 	Using_CodeOps(CodeConstructor);
 	operator         Code();
@@ -5378,8 +5724,8 @@ struct CodeDefine
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeDefine );
-	forceinline StrBuilder to_string()                 { return define_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return define_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return define_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return define_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeDefine);
 	operator    Code();
@@ -5391,9 +5737,9 @@ struct CodeDestructor
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeDestructor );
-	forceinline StrBuilder to_string()                     { return destructor_to_string(* this); }
-	forceinline void   to_strbuilder_def( StrBuilder& result ) { return destructor_to_strbuilder_def(* this, & result); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result ) { return destructor_to_strbuilder_fwd(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                         { return destructor_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_def( StrBuilder& result ) { return destructor_to_strbuilder_def(* this, & result); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result ) { return destructor_to_strbuilder_fwd(* this, & result); }
 #endif
 	Using_CodeOps(CodeDestructor);
 	operator         Code();
@@ -5405,11 +5751,11 @@ struct CodeEnum
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeEnum );
-	forceinline StrBuilder to_string()                            { return enum_to_string(* this); }
-	forceinline void   to_strbuilder_def( StrBuilder& result )        { return enum_to_strbuilder_def(* this, & result); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result )        { return enum_to_strbuilder_fwd(* this, & result); }
-	forceinline void   to_strbuilder_class_def( StrBuilder& result )  { return enum_to_strbuilder_class_def(* this, & result); }
-	forceinline void   to_strbuilder_class_fwd( StrBuilder& result )  { return enum_to_strbuilder_class_fwd(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                                { return enum_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_def( StrBuilder& result )        { return enum_to_strbuilder_def(* this, & result); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result )        { return enum_to_strbuilder_fwd(* this, & result); }
+	forceinline void       to_strbuilder_class_def( StrBuilder& result )  { return enum_to_strbuilder_class_def(* this, & result); }
+	forceinline void       to_strbuilder_class_fwd( StrBuilder& result )  { return enum_to_strbuilder_class_fwd(* this, & result); }
 #endif
 	Using_CodeOps(CodeEnum);
 	operator  Code();
@@ -5421,8 +5767,8 @@ struct CodeExec
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code(CodeExec);
-	forceinline StrBuilder to_string()               { return exec_to_string(* this); }
-	forceinline void   to_string(StrBuilder& result) { return exec_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()               { return exec_to_strbuilder(* this); }
+	forceinline void   to_strbuilder(StrBuilder& result) { return exec_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeExec);
 	operator Code();
@@ -5435,7 +5781,7 @@ struct CodeExpr
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator  Code();
 	AST_Expr* operator->();
@@ -5446,7 +5792,7 @@ struct CodeExpr_Assign
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Assign );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator         Code();
 	AST_Expr_Assign* operator->();
@@ -5457,7 +5803,7 @@ struct CodeExpr_Alignof
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Alignof );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator          Code();
 	AST_Expr_Alignof* operator->();
@@ -5468,7 +5814,7 @@ struct CodeExpr_Binary
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Binary );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator         Code();
 	AST_Expr_Binary* operator->();
@@ -5479,7 +5825,7 @@ struct CodeExpr_CStyleCast
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_CStyleCast );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator             Code();
 	AST_Expr_CStyleCast* operator->();
@@ -5490,7 +5836,7 @@ struct CodeExpr_FunctionalCast
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_FunctionalCast );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator                 Code();
 	AST_Expr_FunctionalCast* operator->();
@@ -5501,7 +5847,7 @@ struct CodeExpr_CppCast
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_CppCast );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator          Code();
 	AST_Expr_CppCast* operator->();
@@ -5512,7 +5858,7 @@ struct CodeExpr_Element
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Element );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator          Code();
 	AST_Expr_Element* operator->();
@@ -5523,7 +5869,7 @@ struct CodeExpr_ProcCall
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_ProcCall );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator           Code();
 	AST_Expr_ProcCall* operator->();
@@ -5534,7 +5880,7 @@ struct CodeExpr_Decltype
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Decltype );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator  Code();
 	AST_Expr_Decltype* operator->();
@@ -5545,7 +5891,7 @@ struct CodeExpr_Comma
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Comma );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator  Code();
 	AST_Expr_Comma* operator->();
@@ -5556,7 +5902,7 @@ struct CodeExpr_AMS
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_AMS );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator      Code();
 	AST_Expr_AMS* operator->();
@@ -5567,7 +5913,7 @@ struct CodeExpr_Sizeof
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Sizeof );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator         Code();
 	AST_Expr_Sizeof* operator->();
@@ -5578,7 +5924,7 @@ struct CodeExpr_Subscript
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Subscript );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator            Code();
 	AST_Expr_Subscript* operator->();
@@ -5589,7 +5935,7 @@ struct CodeExpr_Ternary
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_Ternary );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator          Code();
 	AST_Expr_Ternary* operator->();
@@ -5600,7 +5946,7 @@ struct CodeExpr_UnaryPrefix
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_UnaryPrefix );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	operator              Code();
 	AST_Expr_UnaryPrefix* operator->();
@@ -5611,7 +5957,7 @@ struct CodeExpr_UnaryPostfix
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExpr_UnaryPostfix );
-	forceinline void to_string( StrBuilder& result );
+	forceinline void to_strbuilder( StrBuilder& result );
 #endif
 	AST*                   raw();
 	operator               Code();
@@ -5624,7 +5970,7 @@ struct CodeExtern
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeExtern );
-	forceinline void to_string( StrBuilder& result ) { return extern_to_string(* this, & result); }
+	forceinline void to_strbuilder( StrBuilder& result ) { return extern_to_strbuilder(* this, & result); }
 #endif
 	Using_CodeOps(CodeExtern);
 	operator    Code();
@@ -5636,8 +5982,8 @@ struct CodeInclude
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeInclude );
-	StrBuilder to_string()                  { return include_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result )  { return include_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                      { return include_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result )  { return include_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeInclude);
 	operator     Code();
@@ -5649,8 +5995,8 @@ struct CodeFriend
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeFriend );
-	forceinline StrBuilder to_string()                 { return friend_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return friend_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return friend_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return friend_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeFriend);
 	operator    Code();
@@ -5662,9 +6008,9 @@ struct CodeFn
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeFn );
-	forceinline StrBuilder to_string()                     { return fn_to_string(* this); }
-	forceinline void   to_strbuilder_def( StrBuilder& result ) { return fn_to_strbuilder_def(* this, & result); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result ) { return fn_to_strbuilder_fwd(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                         { return fn_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_def( StrBuilder& result ) { return fn_to_strbuilder_def(* this, & result); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result ) { return fn_to_strbuilder_fwd(* this, & result); }
 #endif
 	Using_CodeOps(CodeFn);
 	operator Code();
@@ -5676,8 +6022,8 @@ struct CodeModule
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeModule );
-	forceinline StrBuilder to_string()                 { return module_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return module_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return module_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return module_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeModule);
 	operator    Code();
@@ -5689,8 +6035,8 @@ struct CodeNS
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeNS );
-	forceinline StrBuilder to_string()                 { return namespace_to_string(* this); }
-	forceinline void    to_string( StrBuilder& result ) { return namespace_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return namespace_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return namespace_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeNS);
 	operator Code();
@@ -5702,9 +6048,9 @@ struct CodeOperator
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeOperator );
-	forceinline StrBuilder to_string()                     { return code_op_to_string(* this); }
-	forceinline void   to_strbuilder_def( StrBuilder& result ) { return code_op_to_strbuilder_def(* this, & result); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result ) { return code_op_to_strbuilder_fwd(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                         { return code_op_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_def( StrBuilder& result ) { return code_op_to_strbuilder_def(* this, & result); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result ) { return code_op_to_strbuilder_fwd(* this, & result); }
 #endif
 	Using_CodeOps(CodeOperator);
 	operator      Code();
@@ -5716,9 +6062,9 @@ struct CodeOpCast
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeOpCast );
-	forceinline StrBuilder to_string()                     { return opcast_to_string(* this); }
-	forceinline void   to_strbuilder_def( StrBuilder& result ) { return opcast_to_strbuilder_def(* this, & result); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result ) { return opcast_to_strbuilder_fwd(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                         { return opcast_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_def( StrBuilder& result ) { return opcast_to_strbuilder_def(* this, & result); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result ) { return opcast_to_strbuilder_fwd(* this, & result); }
 #endif
 	Using_CodeOps(CodeOpCast);
 	operator    Code();
@@ -5730,8 +6076,8 @@ struct CodePragma
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodePragma );
-	forceinline StrBuilder to_string()                 { return pragma_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return pragma_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return pragma_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return pragma_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps( CodePragma );
 	operator    Code();
@@ -5743,13 +6089,13 @@ struct CodePreprocessCond
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodePreprocessCond );
-	forceinline StrBuilder to_string()                        { return preprocess_to_string(* this); }
-	forceinline void   to_strbuilder_if( StrBuilder& result )     { return preprocess_to_strbuilder_if(* this, & result); }
-	forceinline void   to_strbuilder_ifdef( StrBuilder& result )  { return preprocess_to_strbuilder_ifdef(* this, & result); }
-	forceinline void   to_strbuilder_ifndef( StrBuilder& result ) { return preprocess_to_strbuilder_ifndef(* this, & result); }
-	forceinline void   to_strbuilder_elif( StrBuilder& result )   { return preprocess_to_strbuilder_elif(* this, & result); }
-	forceinline void   to_strbuilder_else( StrBuilder& result )   { return preprocess_to_strbuilder_else(* this, & result); }
-	forceinline void   to_strbuilder_endif( StrBuilder& result )  { return preprocess_to_strbuilder_endif(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                            { return preprocess_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_if( StrBuilder& result )     { return preprocess_to_strbuilder_if(* this, & result); }
+	forceinline void       to_strbuilder_ifdef( StrBuilder& result )  { return preprocess_to_strbuilder_ifdef(* this, & result); }
+	forceinline void       to_strbuilder_ifndef( StrBuilder& result ) { return preprocess_to_strbuilder_ifndef(* this, & result); }
+	forceinline void       to_strbuilder_elif( StrBuilder& result )   { return preprocess_to_strbuilder_elif(* this, & result); }
+	forceinline void       to_strbuilder_else( StrBuilder& result )   { return preprocess_to_strbuilder_else(* this, & result); }
+	forceinline void       to_strbuilder_endif( StrBuilder& result )  { return preprocess_to_strbuilder_endif(* this, & result); }
 #endif
 	Using_CodeOps( CodePreprocessCond );
 	operator            Code();
@@ -5762,8 +6108,8 @@ struct CodeStmt
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator  Code();
 	AST_Stmt* operator->();
@@ -5774,8 +6120,8 @@ struct CodeStmt_Break
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Break );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator        Code();
 	AST_Stmt_Break* operator->();
@@ -5786,8 +6132,8 @@ struct CodeStmt_Case
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Case );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator       Code();
 	AST_Stmt_Case* operator->();
@@ -5798,8 +6144,8 @@ struct CodeStmt_Continue
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Continue );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator           Code();
 	AST_Stmt_Continue* operator->();
@@ -5810,8 +6156,8 @@ struct CodeStmt_Decl
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Decl );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator       Code();
 	AST_Stmt_Decl* operator->();
@@ -5822,8 +6168,8 @@ struct CodeStmt_Do
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Do );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator     Code();
 	AST_Stmt_Do* operator->();
@@ -5834,8 +6180,8 @@ struct CodeStmt_Expr
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Expr );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator       Code();
 	AST_Stmt_Expr* operator->();
@@ -5846,8 +6192,8 @@ struct CodeStmt_Else
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Else );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator       Code();
 	AST_Stmt_Else* operator->();
@@ -5858,8 +6204,8 @@ struct CodeStmt_If
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_If );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator     Code();
 	AST_Stmt_If* operator->();
@@ -5870,8 +6216,8 @@ struct CodeStmt_For
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_For );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator      Code();
 	AST_Stmt_For* operator->();
@@ -5882,8 +6228,8 @@ struct CodeStmt_Goto
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Goto );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator       Code();
 	AST_Stmt_Goto* operator->();
@@ -5894,8 +6240,8 @@ struct CodeStmt_Label
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Label );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator        Code();
 	AST_Stmt_Label* operator->();
@@ -5906,8 +6252,8 @@ struct CodeStmt_Switch
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_Switch );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator       Code();
 	AST_Stmt_Switch* operator->();
@@ -5918,8 +6264,8 @@ struct CodeStmt_While
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStmt_While );
-	forceinline StrBuilder to_string();
-	forceinline void   to_string( StrBuilder& result );
+	forceinline StrBuilder to_strbuilder();
+	forceinline void       to_strbuilder( StrBuilder& result );
 #endif
 	operator       Code();
 	AST_Stmt_While* operator->();
@@ -5931,8 +6277,8 @@ struct CodeTemplate
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeTemplate );
-	forceinline StrBuilder to_string()                 { return template_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return template_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return template_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return template_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps( CodeTemplate );
 	operator      Code();
@@ -5944,8 +6290,8 @@ struct CodeTypename
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeTypename );
-	forceinline StrBuilder to_string()                 { return typename_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return typename_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return typename_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return typename_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps( CodeTypename );
 	operator      Code();
@@ -5957,8 +6303,8 @@ struct CodeTypedef
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeTypedef );
-	forceinline StrBuilder to_string()                 { return typedef_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return typedef_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return typedef_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return typedef_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps( CodeTypedef );
 	operator     Code();
@@ -5970,9 +6316,9 @@ struct CodeUnion
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeUnion );
-	forceinline StrBuilder to_string()                     { return union_to_string(* this); }
-	forceinline void   to_strbuilder_def( StrBuilder& result ) { return union_to_strbuilder_def(* this, & result); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result ) { return union_to_strbuilder_fwd(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                         { return union_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_def( StrBuilder& result ) { return union_to_strbuilder_def(* this, & result); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result ) { return union_to_strbuilder_fwd(* this, & result); }
 #endif
 	Using_CodeOps(CodeUnion);
 	operator   Code();
@@ -5984,9 +6330,9 @@ struct CodeUsing
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeUsing );
-	forceinline StrBuilder to_string()                    { return using_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result )    { return using_to_strbuilder_ref(* this, & result); }
-	forceinline void   to_strbuilder_ns( StrBuilder& result ) { return using_to_strbuilder_ns(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                        { return using_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result )    { return using_to_strbuilder_ref(* this, & result); }
+	forceinline void       to_strbuilder_ns( StrBuilder& result ) { return using_to_strbuilder_ns(* this, & result); }
 #endif
 	Using_CodeOps(CodeUsing);
 	operator   Code();
@@ -5998,8 +6344,8 @@ struct CodeVar
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeVar );
-	forceinline StrBuilder to_string()                 { return var_to_string(* this); }
-	forceinline void   to_string( StrBuilder& result ) { return var_to_strbuilder_ref(* this, & result); }
+	forceinline StrBuilder to_strbuilder()                     { return var_to_strbuilder(* this); }
+	forceinline void       to_strbuilder( StrBuilder& result ) { return var_to_strbuilder_ref(* this, & result); }
 #endif
 	Using_CodeOps(CodeVar);
 	operator Code();
@@ -6011,10 +6357,10 @@ struct CodeStruct
 {
 #if ! GEN_C_LIKE_CPP
 	Using_Code( CodeStruct );
-	forceinline void   add_interface( CodeTypename interface ) { return struct_add_interface(* this, interface); }
-	forceinline StrBuilder to_string()                             { return struct_to_string(* this); }
-	forceinline void   to_strbuilder_fwd( StrBuilder& result )         { return struct_to_strbuilder_fwd(* this, & result); }
-	forceinline void   to_strbuilder_def( StrBuilder& result )         { return struct_to_strbuilder_def(* this, & result); }
+	forceinline void       add_interface( CodeTypename interface ) { return struct_add_interface(* this, interface); }
+	forceinline StrBuilder to_strbuilder()                         { return struct_to_strbuilder(* this); }
+	forceinline void       to_strbuilder_fwd( StrBuilder& result ) { return struct_to_strbuilder_fwd(* this, & result); }
+	forceinline void       to_strbuilder_def( StrBuilder& result ) { return struct_to_strbuilder_def(* this, & result); }
 #endif
 	Using_CodeOps( CodeStruct );
 	forceinline operator Code() { return * rcast( Code*, this ); }
@@ -6052,7 +6398,7 @@ struct InvalidCode_ImplictCaster
     operator CodeNS            () const { return cast(CodeNS,             Code_Invalid); }
     operator CodeOperator      () const { return cast(CodeOperator,       Code_Invalid); }
     operator CodeOpCast        () const { return cast(CodeOpCast,         Code_Invalid); }
-    operator CodeParams        () const { return cast(CodeParams,          Code_Invalid); }
+    operator CodeParams        () const { return cast(CodeParams,         Code_Invalid); }
     operator CodePragma        () const { return cast(CodePragma,         Code_Invalid); }
     operator CodePreprocessCond() const { return cast(CodePreprocessCond, Code_Invalid); }
     operator CodeSpecifiers    () const { return cast(CodeSpecifiers,     Code_Invalid); }
@@ -6098,131 +6444,131 @@ struct NullCode_ImplicitCaster
     operator CodeVar           () const { return {nullptr}; }
 };
 
-#if ! GEN_C_LIKE_CPP
-GEN_OPTIMIZE_MAPPINGS_BEGIN
-
-forceinline void   append          ( CodeBody body, Code     other ) { return body_append(body, other); }
-forceinline void   append          ( CodeBody body, CodeBody other ) { return body_append_body(body, other); }
-forceinline StrBuilder to_string       ( CodeBody body )                 { return body_to_string(body); }
-forceinline void   to_string       ( CodeBody body, StrBuilder& result ) { return body_to_strbuilder_ref(body, & result); }
-forceinline void   to_strbuilder_export( CodeBody body, StrBuilder& result ) { return body_to_strbuilder_export(body, & result); }
-
 forceinline Code begin( CodeBody body)                   { return begin_CodeBody(body); }
 forceinline Code end  ( CodeBody body )                  { return end_CodeBody(body); }
 forceinline Code next ( CodeBody body, Code entry_iter ) { return next_CodeBody(body, entry_iter); }
 
-forceinline void   add_interface( CodeClass self, CodeTypename interface ) { return class_add_interface(self, interface); }
-forceinline StrBuilder to_string    ( CodeClass self )                         { return class_to_string(self); }
-forceinline void   to_strbuilder_def( CodeClass self, StrBuilder& result )         { return class_to_strbuilder_def(self, & result); }
-forceinline void   to_strbuilder_fwd( CodeClass self, StrBuilder& result )         { return class_to_strbuilder_fwd(self, & result); }
-
-forceinline void      append     (CodeParams params, CodeParams param ) { return params_append(params, param); }
-forceinline CodeParams get        (CodeParams params, s32 idx)          { return params_get(params, idx); }
-forceinline bool      has_entries(CodeParams params )                   { return params_has_entries(params); }
-forceinline StrBuilder    to_string  (CodeParams params )                   { return params_to_string(params); }
-forceinline void      to_string  (CodeParams params, StrBuilder& result )   { return params_to_strbuilder_ref(params, & result); }
-  
 forceinline CodeParams begin(CodeParams params)                        { return begin_CodeParams(params); }
 forceinline CodeParams end  (CodeParams params)                        { return end_CodeParams(params); }
 forceinline CodeParams next (CodeParams params, CodeParams entry_iter) { return next_CodeParams(params, entry_iter); }
-
-forceinline bool   append   (CodeSpecifiers specifiers, Specifier spec)       { return specifiers_append(specifiers, spec); }
-forceinline s32    has      (CodeSpecifiers specifiers, Specifier spec)       { return specifiers_has(specifiers, spec); }
-forceinline s32    remove   (CodeSpecifiers specifiers, Specifier to_remove ) { return specifiers_remove(specifiers, to_remove); }
-forceinline StrBuilder to_string(CodeSpecifiers specifiers)                       { return specifiers_to_string(specifiers); }
-forceinline void   to_string(CodeSpecifiers specifiers, StrBuilder& result)       { return specifiers_to_strbuilder_ref(specifiers, & result);  }
 
 forceinline Specifier* begin(CodeSpecifiers specifiers)                       { return begin_CodeSpecifiers(specifiers); }
 forceinline Specifier* end  (CodeSpecifiers specifiers)                       { return end_CodeSpecifiers(specifiers); }
 forceinline Specifier* next (CodeSpecifiers specifiers, Specifier& spec_iter) { return next_CodeSpecifiers(specifiers, & spec_iter); }
 
-forceinline void   add_interface(CodeStruct self, CodeTypename interface) { return struct_add_interface(self, interface); }
-forceinline StrBuilder to_string    (CodeStruct self)                         { return struct_to_string(self); }
-forceinline void   to_strbuilder_fwd(CodeStruct self, StrBuilder& result)         { return struct_to_strbuilder_fwd(self, & result); }
-forceinline void   to_strbuilder_def(CodeStruct self, StrBuilder& result)         { return struct_to_strbuilder_def(self, & result); }
+#if ! GEN_C_LIKE_CPP
+GEN_OPTIMIZE_MAPPINGS_BEGIN
 
-forceinline StrBuilder to_string(CodeAttributes attributes)                 { return attributes_to_string(attributes); }
-forceinline void   to_string(CodeAttributes attributes, StrBuilder& result) { return attributes_to_strbuilder_ref(attributes, & result); }
+forceinline void       append              ( CodeBody body, Code     other )     { return body_append(body, other); }
+forceinline void       append              ( CodeBody body, CodeBody other )     { return body_append_body(body, other); }
+forceinline StrBuilder to_strbuilder       ( CodeBody body )                     { return body_to_strbuilder(body); }
+forceinline void       to_strbuilder       ( CodeBody body, StrBuilder& result ) { return body_to_strbuilder_ref(body, & result); }
+forceinline void       to_strbuilder_export( CodeBody body, StrBuilder& result ) { return body_to_strbuilder_export(body, & result); }
 
-forceinline StrBuilder to_string(CodeComment comment )                  { return comment_to_string(comment); }
-forceinline void   to_string(CodeComment comment, StrBuilder& result )  { return comment_to_strbuilder_ref(comment, & result); }
+forceinline void       add_interface    ( CodeClass self, CodeTypename interface ) { return class_add_interface(self, interface); }
+forceinline StrBuilder to_strbuilder    ( CodeClass self )                         { return class_to_strbuilder(self); }
+forceinline void       to_strbuilder_def( CodeClass self, StrBuilder& result )     { return class_to_strbuilder_def(self, & result); }
+forceinline void       to_strbuilder_fwd( CodeClass self, StrBuilder& result )     { return class_to_strbuilder_fwd(self, & result); }
 
-forceinline StrBuilder to_string    (CodeConstructor constructor)                  { return constructor_to_string(constructor); }
-forceinline void   to_strbuilder_def(CodeConstructor constructor, StrBuilder& result ) { return constructor_to_strbuilder_def(constructor, & result); }
-forceinline void   to_strbuilder_fwd(CodeConstructor constructor, StrBuilder& result ) { return constructor_to_strbuilder_fwd(constructor, & result); }
+forceinline void       append       (CodeParams params, CodeParams param )   { return params_append(params, param); }
+forceinline CodeParams get          (CodeParams params, s32 idx)             { return params_get(params, idx); }
+forceinline bool       has_entries  (CodeParams params )                     { return params_has_entries(params); }
+forceinline StrBuilder to_strbuilder(CodeParams params )                     { return params_to_strbuilder(params); }
+forceinline void       to_strbuilder(CodeParams params, StrBuilder& result ) { return params_to_strbuilder_ref(params, & result); }
+  
+forceinline bool       append       (CodeSpecifiers specifiers, Specifier spec)       { return specifiers_append(specifiers, spec); }
+forceinline s32        has          (CodeSpecifiers specifiers, Specifier spec)       { return specifiers_has(specifiers, spec); }
+forceinline s32        remove       (CodeSpecifiers specifiers, Specifier to_remove ) { return specifiers_remove(specifiers, to_remove); }
+forceinline StrBuilder to_strbuilder(CodeSpecifiers specifiers)                       { return specifiers_to_strbuilder(specifiers); }
+forceinline void       to_strbuilder(CodeSpecifiers specifiers, StrBuilder& result)       { return specifiers_to_strbuilder_ref(specifiers, & result);  }
 
-forceinline StrBuilder to_string(CodeDefine self)                 { return define_to_string(self); }
-forceinline void   to_string(CodeDefine self, StrBuilder& result) { return define_to_strbuilder_ref(self, & result); }
+forceinline void       add_interface    (CodeStruct self, CodeTypename interface) { return struct_add_interface(self, interface); }
+forceinline StrBuilder to_strbuilder    (CodeStruct self)                         { return struct_to_strbuilder(self); }
+forceinline void       to_strbuilder_fwd(CodeStruct self, StrBuilder& result)     { return struct_to_strbuilder_fwd(self, & result); }
+forceinline void       to_strbuilder_def(CodeStruct self, StrBuilder& result)     { return struct_to_strbuilder_def(self, & result); }
 
-forceinline StrBuilder to_string    (CodeDestructor destructor)                  { return destructor_to_string(destructor); }
-forceinline void   to_strbuilder_def(CodeDestructor destructor, StrBuilder& result ) { return destructor_to_strbuilder_def(destructor, & result); }
-forceinline void   to_strbuilder_fwd(CodeDestructor destructor, StrBuilder& result ) { return destructor_to_strbuilder_fwd(destructor, & result); }
+forceinline StrBuilder to_strbuilder(CodeAttributes attributes)                     { return attributes_to_strbuilder(attributes); }
+forceinline void       to_strbuilder(CodeAttributes attributes, StrBuilder& result) { return attributes_to_strbuilder_ref(attributes, & result); }
 
-forceinline StrBuilder to_string          (CodeEnum self)                  { return enum_to_string(self); }
-forceinline void   to_strbuilder_def      (CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_def(self, & result); }
-forceinline void   to_strbuilder_fwd      (CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_fwd(self, & result); }
-forceinline void   to_strbuilder_class_def(CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_class_def(self, & result); }
-forceinline void   to_strbuilder_class_fwd(CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_class_fwd(self, & result); }
+forceinline StrBuilder to_strbuilder(CodeComment comment )                      { return comment_to_strbuilder(comment); }
+forceinline void       to_strbuilder(CodeComment comment, StrBuilder& result )  { return comment_to_strbuilder_ref(comment, & result); }
 
-forceinline StrBuilder to_string(CodeExec exec)                 { return exec_to_string(exec); }
-forceinline void   to_string(CodeExec exec, StrBuilder& result) { return exec_to_strbuilder_ref(exec, & result); }
+forceinline StrBuilder to_strbuilder    (CodeConstructor constructor)                      { return constructor_to_strbuilder(constructor); }
+forceinline void       to_strbuilder_def(CodeConstructor constructor, StrBuilder& result ) { return constructor_to_strbuilder_def(constructor, & result); }
+forceinline void       to_strbuilder_fwd(CodeConstructor constructor, StrBuilder& result ) { return constructor_to_strbuilder_fwd(constructor, & result); }
 
-forceinline void to_string(CodeExtern self, StrBuilder& result) { return extern_to_string(self, & result); }
+forceinline StrBuilder to_strbuilder(CodeDefine self)                     { return define_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeDefine self, StrBuilder& result) { return define_to_strbuilder_ref(self, & result); }
 
-forceinline StrBuilder to_string(CodeInclude self)                 { return include_to_string(self); }
-forceinline void   to_string(CodeInclude self, StrBuilder& result) { return include_to_strbuilder_ref(self, & result); }
+forceinline StrBuilder to_strbuilder    (CodeDestructor destructor)                      { return destructor_to_strbuilder(destructor); }
+forceinline void       to_strbuilder_def(CodeDestructor destructor, StrBuilder& result ) { return destructor_to_strbuilder_def(destructor, & result); }
+forceinline void       to_strbuilder_fwd(CodeDestructor destructor, StrBuilder& result ) { return destructor_to_strbuilder_fwd(destructor, & result); }
 
-forceinline StrBuilder to_string(CodeFriend self)                 { return friend_to_string(self); }
-forceinline void   to_string(CodeFriend self, StrBuilder& result) { return friend_to_strbuilder_ref(self, & result); }
+forceinline StrBuilder to_strbuilder          (CodeEnum self)                      { return enum_to_strbuilder(self); }
+forceinline void       to_strbuilder_def      (CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_def(self, & result); }
+forceinline void       to_strbuilder_fwd      (CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_fwd(self, & result); }
+forceinline void       to_strbuilder_class_def(CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_class_def(self, & result); }
+forceinline void       to_strbuilder_class_fwd(CodeEnum self, StrBuilder& result ) { return enum_to_strbuilder_class_fwd(self, & result); }
 
-forceinline StrBuilder to_string    (CodeFn self)                 { return fn_to_string(self); }
-forceinline void   to_strbuilder_def(CodeFn self, StrBuilder& result) { return fn_to_strbuilder_def(self, & result); }
-forceinline void   to_strbuilder_fwd(CodeFn self, StrBuilder& result) { return fn_to_strbuilder_fwd(self, & result); }
+forceinline StrBuilder to_strbuilder(CodeExec exec)                     { return exec_to_strbuilder(exec); }
+forceinline void       to_strbuilder(CodeExec exec, StrBuilder& result) { return exec_to_strbuilder_ref(exec, & result); }
 
-forceinline StrBuilder to_string(CodeModule self)                 { return module_to_string(self); }
-forceinline void   to_string(CodeModule self, StrBuilder& result) { return module_to_strbuilder_ref(self, & result); }
+forceinline void to_strbuilder(CodeExtern self, StrBuilder& result) { return extern_to_strbuilder(self, & result); }
 
-forceinline StrBuilder to_string(CodeNS self)                 { return namespace_to_string(self); }
-forceinline void   to_string(CodeNS self, StrBuilder& result) { return namespace_to_strbuilder_ref(self,  & result); }
+forceinline StrBuilder to_strbuilder(CodeInclude self)                     { return include_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeInclude self, StrBuilder& result) { return include_to_strbuilder_ref(self, & result); }
 
-forceinline StrBuilder to_string    (CodeOperator self)                  { return code_op_to_string(self); }
-forceinline void   to_strbuilder_fwd(CodeOperator self, StrBuilder& result ) { return code_op_to_strbuilder_fwd(self, & result); }
-forceinline void   to_strbuilder_def(CodeOperator self, StrBuilder& result ) { return code_op_to_strbuilder_def(self, & result); }
+forceinline StrBuilder to_strbuilder(CodeFriend self)                     { return friend_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeFriend self, StrBuilder& result) { return friend_to_strbuilder_ref(self, & result); }
 
-forceinline StrBuilder to_string    (CodeOpCast op_cast )                 { return opcast_to_string(op_cast); }
-forceinline void   to_strbuilder_def(CodeOpCast op_cast, StrBuilder& result ) { return opcast_to_strbuilder_def(op_cast, & result); }
-forceinline void   to_strbuilder_fwd(CodeOpCast op_cast, StrBuilder& result ) { return opcast_to_strbuilder_fwd(op_cast, & result); }
+forceinline StrBuilder to_strbuilder    (CodeFn self)                     { return fn_to_strbuilder(self); }
+forceinline void       to_strbuilder_def(CodeFn self, StrBuilder& result) { return fn_to_strbuilder_def(self, & result); }
+forceinline void       to_strbuilder_fwd(CodeFn self, StrBuilder& result) { return fn_to_strbuilder_fwd(self, & result); }
 
-forceinline StrBuilder to_string(CodePragma self)                 { return pragma_to_string(self); }
-forceinline void   to_string(CodePragma self, StrBuilder& result) { return pragma_to_strbuilder_ref(self, & result); }
+forceinline StrBuilder to_strbuilder(CodeModule self)                     { return module_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeModule self, StrBuilder& result) { return module_to_strbuilder_ref(self, & result); }
 
-forceinline StrBuilder to_string       (CodePreprocessCond cond)                  { return preprocess_to_string(cond); }
-forceinline void   to_strbuilder_if    (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_if(cond, & result); }
-forceinline void   to_strbuilder_ifdef (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_ifdef(cond, & result); }
-forceinline void   to_strbuilder_ifndef(CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_ifndef(cond, & result); }
-forceinline void   to_strbuilder_elif  (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_elif(cond, & result); }
-forceinline void   to_strbuilder_else  (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_else(cond, & result); }
-forceinline void   to_strbuilder_endif (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_endif(cond, & result); }
+forceinline StrBuilder to_strbuilder(CodeNS self)                     { return namespace_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeNS self, StrBuilder& result) { return namespace_to_strbuilder_ref(self,  & result); }
 
-forceinline StrBuilder to_string(CodeTemplate self)                 { return template_to_string(self); }
-forceinline void   to_string(CodeTemplate self, StrBuilder& result) { return template_to_strbuilder_ref(self, & result); }
+forceinline StrBuilder to_strbuilder    (CodeOperator self)                      { return code_op_to_strbuilder(self); }
+forceinline void       to_strbuilder_fwd(CodeOperator self, StrBuilder& result ) { return code_op_to_strbuilder_fwd(self, & result); }
+forceinline void       to_strbuilder_def(CodeOperator self, StrBuilder& result ) { return code_op_to_strbuilder_def(self, & result); }
 
-forceinline StrBuilder to_string(CodeTypename self)                 { return typename_to_string(self); }
-forceinline void   to_string(CodeTypename self, StrBuilder& result) { return typename_to_strbuilder_ref(self, & result); }
+forceinline StrBuilder to_strbuilder    (CodeOpCast op_cast )                     { return opcast_to_strbuilder(op_cast); }
+forceinline void       to_strbuilder_def(CodeOpCast op_cast, StrBuilder& result ) { return opcast_to_strbuilder_def(op_cast, & result); }
+forceinline void       to_strbuilder_fwd(CodeOpCast op_cast, StrBuilder& result ) { return opcast_to_strbuilder_fwd(op_cast, & result); }
 
-forceinline StrBuilder to_string(CodeTypedef self)                  { return typedef_to_string(self); }
-forceinline void   to_string(CodeTypedef self, StrBuilder& result ) { return typedef_to_strbuilder_ref(self, & result); }
+forceinline StrBuilder to_strbuilder(CodePragma self)                     { return pragma_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodePragma self, StrBuilder& result) { return pragma_to_strbuilder_ref(self, & result); }
 
-forceinline StrBuilder to_string    (CodeUnion self)                 { return union_to_string(self); }
-forceinline void   to_strbuilder_def(CodeUnion self, StrBuilder& result) { return union_to_strbuilder_def(self, & result); }
-forceinline void   to_strbuilder_fwd(CodeUnion self, StrBuilder& result) { return union_to_strbuilder_fwd(self, & result); }
+forceinline StrBuilder to_strbuilder       (CodePreprocessCond cond)                      { return preprocess_to_strbuilder(cond); }
+forceinline void       to_strbuilder_if    (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_if(cond, & result); }
+forceinline void       to_strbuilder_ifdef (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_ifdef(cond, & result); }
+forceinline void       to_strbuilder_ifndef(CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_ifndef(cond, & result); }
+forceinline void       to_strbuilder_elif  (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_elif(cond, & result); }
+forceinline void       to_strbuilder_else  (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_else(cond, & result); }
+forceinline void       to_strbuilder_endif (CodePreprocessCond cond, StrBuilder& result ) { return preprocess_to_strbuilder_endif(cond, & result); }
 
-forceinline StrBuilder to_string   (CodeUsing op_cast )                 { return using_to_string(op_cast); }
-forceinline void   to_string   (CodeUsing op_cast, StrBuilder& result ) { return using_to_strbuilder_ref(op_cast, & result); }
-forceinline void   to_strbuilder_ns(CodeUsing op_cast, StrBuilder& result ) { return using_to_strbuilder_ns(op_cast, & result); }
+forceinline StrBuilder to_strbuilder(CodeTemplate self)                     { return template_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeTemplate self, StrBuilder& result) { return template_to_strbuilder_ref(self, & result); }
 
-forceinline StrBuilder to_string(CodeVar self)                 { return var_to_string(self); }
-forceinline void   to_string(CodeVar self, StrBuilder& result) { return var_to_strbuilder_ref(self, & result); }
+forceinline StrBuilder to_strbuilder(CodeTypename self)                     { return typename_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeTypename self, StrBuilder& result) { return typename_to_strbuilder_ref(self, & result); }
+
+forceinline StrBuilder to_strbuilder(CodeTypedef self)                      { return typedef_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeTypedef self, StrBuilder& result ) { return typedef_to_strbuilder_ref(self, & result); }
+
+forceinline StrBuilder to_strbuilder    (CodeUnion self)                     { return union_to_strbuilder(self); }
+forceinline void       to_strbuilder_def(CodeUnion self, StrBuilder& result) { return union_to_strbuilder_def(self, & result); }
+forceinline void       to_strbuilder_fwd(CodeUnion self, StrBuilder& result) { return union_to_strbuilder_fwd(self, & result); }
+
+forceinline StrBuilder to_strbuilder   (CodeUsing op_cast )                     { return using_to_strbuilder(op_cast); }
+forceinline void       to_strbuilder   (CodeUsing op_cast, StrBuilder& result ) { return using_to_strbuilder_ref(op_cast, & result); }
+forceinline void       to_strbuilder_ns(CodeUsing op_cast, StrBuilder& result ) { return using_to_strbuilder_ns(op_cast, & result); }
+
+forceinline StrBuilder to_strbuilder(CodeVar self)                     { return var_to_strbuilder(self); }
+forceinline void       to_strbuilder(CodeVar self, StrBuilder& result) { return var_to_strbuilder_ref(self, & result); }
 
 GEN_OPITMIZE_MAPPINGS_END
 #endif //if GEN_C_LIKE_CPP
@@ -6258,7 +6604,7 @@ struct AST_Body
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Front;
 	Code              Back;
 	Token*            Tok;
@@ -6273,9 +6619,9 @@ struct AST_Attributes
 {
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
-		StringCached  Content;
+		StrCached  Content;
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6291,7 +6637,7 @@ struct AST_BaseClass
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6306,9 +6652,9 @@ struct AST_Comment
 {
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
-		StringCached  Content;
+		StrCached  Content;
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6333,7 +6679,7 @@ struct AST_Class
 			char 	        _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached            Name;
+	StrCached            Name;
 	CodeTypename            Prev;
 	CodeTypename            Next;
 	Token*                  Tok;
@@ -6359,7 +6705,7 @@ struct AST_Constructor
 			char 		   _PAD_PROPERTIES_2_ [ sizeof(AST*) * 2 ];
 		};
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6373,9 +6719,9 @@ struct AST_Define
 {
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
-		StringCached  Content;
+		StrCached  Content;
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6399,7 +6745,7 @@ struct AST_Destructor
 			char 		   _PAD_PROPERTIES_3_ [ sizeof(AST*) ];
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                 Tok;
@@ -6424,7 +6770,7 @@ struct AST_Enum
 			char 	       _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                 Tok;
@@ -6439,9 +6785,9 @@ struct AST_Exec
 {
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
-		StringCached  Content;
+		StrCached  Content;
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6457,7 +6803,7 @@ struct AST_Expr
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6472,7 +6818,7 @@ struct AST_Expr_Assign
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6487,7 +6833,7 @@ struct AST_Expr_Alignof
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6502,7 +6848,7 @@ struct AST_Expr_Binary
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6517,7 +6863,7 @@ struct AST_Expr_CStyleCast
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6532,7 +6878,7 @@ struct AST_Expr_FunctionalCast
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6547,7 +6893,7 @@ struct AST_Expr_CppCast
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6562,7 +6908,7 @@ struct AST_Expr_ProcCall
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6577,7 +6923,7 @@ struct AST_Expr_Decltype
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6592,7 +6938,7 @@ struct AST_Expr_Comma
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6607,7 +6953,7 @@ struct AST_Expr_AMS
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6622,7 +6968,7 @@ struct AST_Expr_Sizeof
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6637,7 +6983,7 @@ struct AST_Expr_Subscript
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6652,7 +6998,7 @@ struct AST_Expr_Ternary
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6667,7 +7013,7 @@ struct AST_Expr_UnaryPrefix
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6682,7 +7028,7 @@ struct AST_Expr_UnaryPostfix
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6697,7 +7043,7 @@ struct AST_Expr_Element
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6719,7 +7065,7 @@ struct AST_Extern
 			char      _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6733,9 +7079,9 @@ struct AST_Include
 {
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
-		StringCached  Content;
+		StrCached  Content;
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6757,7 +7103,7 @@ struct AST_Friend
 			char 	    _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6782,7 +7128,7 @@ struct AST_Fn
 			char 	        _PAD_PROPERTIES_ [ sizeof(AST*) ];
 		};
 	};
-	StringCached            Name;
+	StrCached            Name;
 	Code                    Prev;
 	Code                    Next;
 	Token*                  Tok;
@@ -6798,7 +7144,7 @@ struct AST_Module
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6819,7 +7165,7 @@ struct AST_NS
 			char 	  _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6845,7 +7191,7 @@ struct AST_Operator
 			char 	        _PAD_PROPERTIES_ [ sizeof(AST*) ];
 		};
 	};
-	StringCached   Name;
+	StrCached   Name;
 	Code           Prev;
 	Code           Next;
 	Token*         Tok;
@@ -6871,7 +7217,7 @@ struct AST_OpCast
 			char 	        _PAD_PROPERTIES_3_[ sizeof(AST*) ];
 		};
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6895,7 +7241,7 @@ struct AST_Params
 			// char     _PAD_PROPERTIES_3_[sizeof( AST* )];
 		};
 	};
-	StringCached      Name;
+	StrCached      Name;
 	CodeParams        Last;
 	CodeParams        Next;
 	Token*            Tok;
@@ -6910,9 +7256,9 @@ struct AST_Pragma
 {
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
-		StringCached  Content;
+		StrCached  Content;
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6926,9 +7272,9 @@ struct AST_PreprocessCond
 {
 	union {
 		char          _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
-		StringCached  Content;
+		StrCached  Content;
 	};
-	StringCached      Name;
+	StrCached      Name;
 	Code              Prev;
 	Code              Next;
 	Token*            Tok;
@@ -6941,7 +7287,7 @@ static_assert( sizeof(AST_PreprocessCond) == sizeof(AST), "ERROR: AST_Preprocess
 struct AST_Specifiers
 {
 	Specifier         ArrSpecs[ AST_ArrSpecs_Cap ];
-	StringCached      Name;
+	StrCached      Name;
 	CodeSpecifiers    NextSpecs;
 	Code              Prev;
 	Code              Next;
@@ -6959,7 +7305,7 @@ struct AST_Stmt
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6974,7 +7320,7 @@ struct AST_Stmt_Break
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -6989,7 +7335,7 @@ struct AST_Stmt_Case
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7004,7 +7350,7 @@ struct AST_Stmt_Continue
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7019,7 +7365,7 @@ struct AST_Stmt_Decl
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7034,7 +7380,7 @@ struct AST_Stmt_Do
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7049,7 +7395,7 @@ struct AST_Stmt_Expr
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7064,7 +7410,7 @@ struct AST_Stmt_Else
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7079,7 +7425,7 @@ struct AST_Stmt_If
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7094,7 +7440,7 @@ struct AST_Stmt_For
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7109,7 +7455,7 @@ struct AST_Stmt_Goto
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7124,7 +7470,7 @@ struct AST_Stmt_Label
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7139,7 +7485,7 @@ struct AST_Stmt_Switch
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7154,7 +7500,7 @@ struct AST_Stmt_While
 	union {
 		char _PAD_[ sizeof(Specifier) * AST_ArrSpecs_Cap + sizeof(AST*) ];
 	};
-	StringCached   Name;
+	StrCached   Name;
 	CodeExpr       Prev;
 	CodeExpr       Next;
 	Token*         Tok;
@@ -7180,7 +7526,7 @@ struct AST_Struct
 			char 	       _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	CodeTypename           Prev;
 	CodeTypename           Next;
 	Token*                 Tok;
@@ -7203,7 +7549,7 @@ struct AST_Template
 			char 	       _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                 Tok;
@@ -7232,7 +7578,7 @@ struct AST_Type
 			// CodeSpecifiers SpecsFuncSuffix; // Only used for function signatures
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                  Tok;
@@ -7259,7 +7605,7 @@ struct AST_Typename
 			CodeSpecifiers SpecsFuncSuffix; // Only used for function signatures
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                 Tok;
@@ -7285,7 +7631,7 @@ struct AST_Typedef
 			char 	       _PAD_PROPERTIES_2_[ sizeof(AST*) * 3 ];
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                 Tok;
@@ -7309,7 +7655,7 @@ struct AST_Union
 			char 	       _PAD_PROPERTIES_2_[ sizeof(AST*) ];
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                 Tok;
@@ -7333,7 +7679,7 @@ struct AST_Using
 			char 	        _PAD_PROPERTIES_[ sizeof(AST*) * 3 ];
 		};
 	};
-	StringCached            Name;
+	StrCached            Name;
 	Code                    Prev;
 	Code                    Next;
 	Token*                  Tok;
@@ -7359,7 +7705,7 @@ struct AST_Var
 			CodeVar		   NextVar;
 		};
 	};
-	StringCached           Name;
+	StrCached           Name;
 	Code                   Prev;
 	Code                   Next;
 	Token*                 Tok;
@@ -7386,41 +7732,121 @@ static_assert( sizeof(AST_Var) == sizeof(AST), "ERROR: AST_Var is not the same s
   \▓▓▓▓▓▓  \▓▓▓▓▓▓▓\▓▓   \▓▓     \▓▓▓▓▓▓\▓▓   \▓▓   \▓▓▓▓  \▓▓▓▓▓▓▓\▓▓      \▓▓       \▓▓▓▓▓▓▓ \▓▓▓▓▓▓▓ \▓▓▓▓▓▓▓
 */
 
-// Initialize the library.
-void init();
+#if 0
+enum LogLevel : u32
+{
+	Info,
+	Warning,
+	Panic,
+};
+
+struct LogEntry
+{
+	Str   msg;
+	u32   line_num;
+	void* data;
+};
+
+typedef void LoggerCallback(LogEntry entry);
+#endif
+
+// Note(Ed): This is subject to heavily change 
+// with upcoming changes to the library's fallback (default) allocations strategy;
+// and major changes to lexer/parser context usage.
+struct Context
+{
+// User Configuration
+
+// Persistent Data Allocation
+	AllocatorInfo Allocator_DyanmicContainers; // By default will use a genral slab allocator (TODO(Ed): Currently does not)
+	AllocatorInfo Allocator_Pool;              // By default will use the growing vmem reserve (TODO(Ed): Currently does not)
+	AllocatorInfo Allocator_StrCache;          // By default will use a dedicated slab allocator (TODO(Ed): Currently does not)
+
+// Temporary Allocation
+	AllocatorInfo Allocator_Temp;
+
+	// LoggerCallaback* log_callback; // TODO(Ed): Impl user logger callback as an option.
+
+	u32 Max_CommentLineLength; // Used by def_comment
+	u32 Max_StrCacheLength;    // Any cached string longer than this is always allocated again.
+
+	u32 InitSize_BuilderBuffer;
+	u32 InitSize_CodePoolsArray;
+	u32 InitSize_StringArenasArray;
+
+	u32 CodePool_NumBlocks;
+
+	// TODO(Ed): Review these... (No longer needed if using the proper allocation strategy)
+	u32 InitSize_LexArena;
+	u32 SizePer_StringArena;
+
+// TODO(Ed): Symbol Table
+	// Keep track of all resolved symbols (naemspaced identifiers)
+
+// Parser
+
+	// Used by the lexer to persistently treat all these identifiers as preprocessor defines.
+	// Populate with strings via gen::cache_str.
+	// Functional defines must have format: id( ;at minimum to indicate that the define is only valid with arguments.
+	Array(StrCached) PreprocessorDefines;
+
+// Backend
+
+	// The fallback allocator is utilized if any fo the three above allocators is not specified by the user.
+	u32 InitSize_Fallback_Allocator_Bucket_Size;
+	Array(Arena) Fallback_AllocatorBuckets;
+
+	// Array(Token) LexerTokens;
+
+	Array(Pool)  CodePools;
+	Array(Arena) StringArenas;
+
+	StringTable StrCache;
+
+	// TODO(Ed): This needs to be just handled by a parser context
+
+	Arena LexArena;
+	StringTable  Lexer_defines;
+	Array(Token) Lexer_Tokens;
+
+	// TODO(Ed): Active parse context vs a parse result need to be separated conceptually
+	ParseContext parser;
+};
+
+// Initialize the library. There first ctx initialized must exist for lifetime of other contextes that come after as its the one that
+GEN_API void init(Context* ctx);
 
 // Currently manually free's the arenas, code for checking for leaks.
 // However on Windows at least, it doesn't need to occur as the OS will clean up after the process.
-void deinit();
+GEN_API void deinit(Context* ctx);
 
-// Clears the allocations, but doesn't return to the heap, the calls init() again.
+// Clears the allocations, but doesn't free the memoery, then calls init() again.
 // Ease of use.
-void reset();
+GEN_API void reset(Context* ctx);
+
+GEN_API void set_context(Context* ctx);
+
+// Alternative way to add a preprocess define entry for the lexer & parser to utilize 
+// if the user doesn't want to use def_define
+GEN_API void set_preprocess_define( Str id, b32 is_functional );
 
 // Used internally to retrive or make string allocations.
 // Strings are stored in a series of string arenas of fixed size (SizePer_StringArena)
-StringCached get_cached_string( Str str );
+GEN_API StrCached cache_str( Str str );
 
 /*
 	This provides a fresh Code AST.
 	The gen interface use this as their method from getting a new AST object from the CodePool.
 	Use this if you want to make your own API for formatting the supported Code Types.
 */
-Code make_code();
+GEN_API Code make_code();
 
 // Set these before calling gen's init() procedure.
 
-void set_allocator_data_arrays ( AllocatorInfo data_array_allocator );
-void set_allocator_code_pool   ( AllocatorInfo pool_allocator );
-void set_allocator_lexer       ( AllocatorInfo lex_allocator );
-void set_allocator_strbuilder_arena( AllocatorInfo strbuilder_allocator );
-void set_allocator_strbuilder_table( AllocatorInfo strbuilder_allocator );
-void set_allocator_type_table  ( AllocatorInfo type_reg_allocator );
-
 #pragma region Upfront
 
-CodeAttributes def_attributes( Str content );
-CodeComment    def_comment   ( Str content );
+GEN_API CodeAttributes def_attributes( Str content );
+GEN_API CodeComment    def_comment   ( Str content );
 
 struct Opts_def_struct {
 	CodeBody       body;
@@ -7431,25 +7857,25 @@ struct Opts_def_struct {
 	s32            num_interfaces;
 	ModuleFlag     mflags;
 };
-CodeClass def_class( Str name, Opts_def_struct opts GEN_PARAM_DEFAULT );
+GEN_API CodeClass def_class( Str name, Opts_def_struct opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_constructor {
 	CodeParams params;
 	Code      initializer_list;
 	Code      body;
 };
-CodeConstructor def_constructor( Opts_def_constructor opts GEN_PARAM_DEFAULT );
+GEN_API CodeConstructor def_constructor( Opts_def_constructor opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_define {
 	b32 dont_append_preprocess_defines;
 };
-CodeDefine def_define( Str name, Str content, Opts_def_define opts GEN_PARAM_DEFAULT );
+GEN_API CodeDefine def_define( Str name, Str content, Opts_def_define opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_destructor {
 	Code           body;
 	CodeSpecifiers specifiers;
 };
-CodeDestructor def_destructor( Opts_def_destructor opts GEN_PARAM_DEFAULT );
+GEN_API CodeDestructor def_destructor( Opts_def_destructor opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_enum {
 	CodeBody       body;
@@ -7459,11 +7885,11 @@ struct Opts_def_enum {
 	ModuleFlag     mflags;
 	Code           type_macro;
 };
-CodeEnum def_enum( Str name, Opts_def_enum opts GEN_PARAM_DEFAULT );
+GEN_API CodeEnum def_enum( Str name, Opts_def_enum opts GEN_PARAM_DEFAULT );
 
-CodeExec   def_execution  ( Str content );
-CodeExtern def_extern_link( Str name, CodeBody body );
-CodeFriend def_friend     ( Code symbol );
+GEN_API CodeExec   def_execution  ( Str content );
+GEN_API CodeExtern def_extern_link( Str name, CodeBody body );
+GEN_API CodeFriend def_friend     ( Code symbol );
 
 struct Opts_def_function {
 	CodeParams      params;
@@ -7473,14 +7899,14 @@ struct Opts_def_function {
 	CodeAttributes  attrs;
 	ModuleFlag      mflags;
 };
-CodeFn def_function( Str name, Opts_def_function opts GEN_PARAM_DEFAULT );
+GEN_API CodeFn def_function( Str name, Opts_def_function opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_include   { b32        foreign; };
 struct Opts_def_module    { ModuleFlag mflags;  };
 struct Opts_def_namespace { ModuleFlag mflags;  };
-CodeInclude def_include  ( Str content,             Opts_def_include   opts GEN_PARAM_DEFAULT );
-CodeModule  def_module   ( Str name,                Opts_def_module    opts GEN_PARAM_DEFAULT );
-CodeNS      def_namespace( Str name, CodeBody body, Opts_def_namespace opts GEN_PARAM_DEFAULT );
+GEN_API CodeInclude def_include  ( Str content,             Opts_def_include   opts GEN_PARAM_DEFAULT );
+GEN_API CodeModule  def_module   ( Str name,                Opts_def_module    opts GEN_PARAM_DEFAULT );
+GEN_API CodeNS      def_namespace( Str name, CodeBody body, Opts_def_namespace opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_operator {
 	CodeParams      params;
@@ -7490,26 +7916,26 @@ struct Opts_def_operator {
 	CodeAttributes  attributes;
 	ModuleFlag      mflags;
 };
-CodeOperator def_operator( Operator op, Str nspace, Opts_def_operator opts GEN_PARAM_DEFAULT );
+GEN_API CodeOperator def_operator( Operator op, Str nspace, Opts_def_operator opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_operator_cast {
 	CodeBody       body;
 	CodeSpecifiers specs;
 };
-CodeOpCast def_operator_cast( CodeTypename type, Opts_def_operator_cast opts GEN_PARAM_DEFAULT );
+GEN_API CodeOpCast def_operator_cast( CodeTypename type, Opts_def_operator_cast opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_param { Code value; };
-CodeParams  def_param ( CodeTypename type, Str name, Opts_def_param opts GEN_PARAM_DEFAULT );
-CodePragma def_pragma( Str directive );
+GEN_API CodeParams  def_param ( CodeTypename type, Str name, Opts_def_param opts GEN_PARAM_DEFAULT );
+GEN_API CodePragma def_pragma( Str directive );
 
-CodePreprocessCond def_preprocess_cond( EPreprocessCond type, Str content );
+GEN_API CodePreprocessCond def_preprocess_cond( EPreprocessCond type, Str content );
 
-CodeSpecifiers def_specifier( Specifier specifier );
+GEN_API CodeSpecifiers def_specifier( Specifier specifier );
 
-CodeStruct def_struct( Str name, Opts_def_struct opts GEN_PARAM_DEFAULT );
+GEN_API CodeStruct def_struct( Str name, Opts_def_struct opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_template { ModuleFlag mflags; };
-CodeTemplate def_template( CodeParams params, Code definition, Opts_def_template opts GEN_PARAM_DEFAULT );
+GEN_API CodeTemplate def_template( CodeParams params, Code definition, Opts_def_template opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_type {
 	ETypenameTag   type_tag;
@@ -7517,27 +7943,27 @@ struct Opts_def_type {
 	CodeSpecifiers specifiers;
 	CodeAttributes attributes;
 };
-CodeTypename def_type( Str name, Opts_def_type opts GEN_PARAM_DEFAULT );
+GEN_API CodeTypename def_type( Str name, Opts_def_type opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_typedef {
 	CodeAttributes attributes;
 	ModuleFlag     mflags;
 };
-CodeTypedef def_typedef( Str name, Code type, Opts_def_typedef opts GEN_PARAM_DEFAULT );
+GEN_API CodeTypedef def_typedef( Str name, Code type, Opts_def_typedef opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_union {
 	CodeAttributes attributes;
 	ModuleFlag     mflags;
 };
-CodeUnion def_union( Str name, CodeBody body, Opts_def_union opts GEN_PARAM_DEFAULT );
+GEN_API CodeUnion def_union( Str name, CodeBody body, Opts_def_union opts GEN_PARAM_DEFAULT );
 
 struct Opts_def_using {
 	CodeAttributes attributes;
 	ModuleFlag     mflags;
 };
-CodeUsing def_using( Str name, CodeTypename type, Opts_def_using opts GEN_PARAM_DEFAULT );
+GEN_API CodeUsing def_using( Str name, CodeTypename type, Opts_def_using opts GEN_PARAM_DEFAULT );
 
-CodeUsing def_using_namespace( Str name );
+GEN_API CodeUsing def_using_namespace( Str name );
 
 struct Opts_def_variable
 {
@@ -7546,36 +7972,36 @@ struct Opts_def_variable
 	CodeAttributes attributes;
 	ModuleFlag     mflags;
 };
-CodeVar def_variable( CodeTypename type, Str name, Opts_def_variable opts GEN_PARAM_DEFAULT );
+GEN_API CodeVar def_variable( CodeTypename type, Str name, Opts_def_variable opts GEN_PARAM_DEFAULT );
 
 // Constructs an empty body. Use AST::validate_body() to check if the body is was has valid entries.
-CodeBody def_body( CodeType type );
+GEN_API CodeBody def_body( CodeType type );
 
 // There are two options for defining a struct body, either varadically provided with the args macro to auto-deduce the arg num,
 /// or provide as an array of Code objects.
 
-CodeBody       def_class_body      ( s32 num, ... );
-CodeBody       def_class_body      ( s32 num, Code* codes );
-CodeBody       def_enum_body       ( s32 num, ... );
-CodeBody       def_enum_body       ( s32 num, Code* codes );
-CodeBody       def_export_body     ( s32 num, ... );
-CodeBody       def_export_body     ( s32 num, Code* codes);
-CodeBody       def_extern_link_body( s32 num, ... );
-CodeBody       def_extern_link_body( s32 num, Code* codes );
-CodeBody       def_function_body   ( s32 num, ... );
-CodeBody       def_function_body   ( s32 num, Code* codes );
-CodeBody       def_global_body     ( s32 num, ... );
-CodeBody       def_global_body     ( s32 num, Code* codes );
-CodeBody       def_namespace_body  ( s32 num, ... );
-CodeBody       def_namespace_body  ( s32 num, Code* codes );
-CodeParams     def_params          ( s32 num, ... );
-CodeParams     def_params          ( s32 num, CodeParams* params );
-CodeSpecifiers def_specifiers      ( s32 num, ... );
-CodeSpecifiers def_specifiers      ( s32 num, Specifier* specs );
-CodeBody       def_struct_body     ( s32 num, ... );
-CodeBody       def_struct_body     ( s32 num, Code* codes );
-CodeBody       def_union_body      ( s32 num, ... );
-CodeBody       def_union_body      ( s32 num, Code* codes );
+GEN_API CodeBody       def_class_body      ( s32 num, ... );
+GEN_API CodeBody       def_class_body      ( s32 num, Code* codes );
+GEN_API CodeBody       def_enum_body       ( s32 num, ... );
+GEN_API CodeBody       def_enum_body       ( s32 num, Code* codes );
+GEN_API CodeBody       def_export_body     ( s32 num, ... );
+GEN_API CodeBody       def_export_body     ( s32 num, Code* codes);
+GEN_API CodeBody       def_extern_link_body( s32 num, ... );
+GEN_API CodeBody       def_extern_link_body( s32 num, Code* codes );
+GEN_API CodeBody       def_function_body   ( s32 num, ... );
+GEN_API CodeBody       def_function_body   ( s32 num, Code* codes );
+GEN_API CodeBody       def_global_body     ( s32 num, ... );
+GEN_API CodeBody       def_global_body     ( s32 num, Code* codes );
+GEN_API CodeBody       def_namespace_body  ( s32 num, ... );
+GEN_API CodeBody       def_namespace_body  ( s32 num, Code* codes );
+GEN_API CodeParams     def_params          ( s32 num, ... );
+GEN_API CodeParams     def_params          ( s32 num, CodeParams* params );
+GEN_API CodeSpecifiers def_specifiers      ( s32 num, ... );
+GEN_API CodeSpecifiers def_specifiers      ( s32 num, Specifier* specs );
+GEN_API CodeBody       def_struct_body     ( s32 num, ... );
+GEN_API CodeBody       def_struct_body     ( s32 num, Code* codes );
+GEN_API CodeBody       def_union_body      ( s32 num, ... );
+GEN_API CodeBody       def_union_body      ( s32 num, Code* codes );
 
 #pragma endregion Upfront
 
@@ -7584,7 +8010,6 @@ CodeBody       def_union_body      ( s32 num, Code* codes );
 // TODO(Ed) : Implmeent the new parser API design.
 
 #if 0
-GEN_NS_PARSER_BEGIN
 struct StackNode
 {
 	StackNode* Prev;
@@ -7600,7 +8025,6 @@ struct Error
 	StrBuilder     message;
 	StackNode* context_stack;
 };
-GEN_NS_PARSER_END
 
 struct ParseInfo
 {
@@ -7617,37 +8041,37 @@ struct ParseInfo
 CodeBody parse_file( Str path );
 #endif
 
-CodeClass       parse_class        ( Str class_def       );
-CodeConstructor parse_constructor  ( Str constructor_def );
-CodeDestructor  parse_destructor   ( Str destructor_def  );
-CodeEnum        parse_enum         ( Str enum_def        );
-CodeBody        parse_export_body  ( Str export_def      );
-CodeExtern      parse_extern_link  ( Str exten_link_def  );
-CodeFriend      parse_friend       ( Str friend_def      );
-CodeFn          parse_function     ( Str fn_def          );
-CodeBody        parse_global_body  ( Str body_def        );
-CodeNS          parse_namespace    ( Str namespace_def   );
-CodeOperator    parse_operator     ( Str operator_def    );
-CodeOpCast      parse_operator_cast( Str operator_def    );
-CodeStruct      parse_struct       ( Str struct_def      );
-CodeTemplate    parse_template     ( Str template_def    );
-CodeTypename    parse_type         ( Str type_def        );
-CodeTypedef     parse_typedef      ( Str typedef_def     );
-CodeUnion       parse_union        ( Str union_def       );
-CodeUsing       parse_using        ( Str using_def       );
-CodeVar         parse_variable     ( Str var_def         );
+GEN_API CodeClass       parse_class        ( Str class_def       );
+GEN_API CodeConstructor parse_constructor  ( Str constructor_def );
+GEN_API CodeDestructor  parse_destructor   ( Str destructor_def  );
+GEN_API CodeEnum        parse_enum         ( Str enum_def        );
+GEN_API CodeBody        parse_export_body  ( Str export_def      );
+GEN_API CodeExtern      parse_extern_link  ( Str exten_link_def  );
+GEN_API CodeFriend      parse_friend       ( Str friend_def      );
+GEN_API CodeFn          parse_function     ( Str fn_def          );
+GEN_API CodeBody        parse_global_body  ( Str body_def        );
+GEN_API CodeNS          parse_namespace    ( Str namespace_def   );
+GEN_API CodeOperator    parse_operator     ( Str operator_def    );
+GEN_API CodeOpCast      parse_operator_cast( Str operator_def    );
+GEN_API CodeStruct      parse_struct       ( Str struct_def      );
+GEN_API CodeTemplate    parse_template     ( Str template_def    );
+GEN_API CodeTypename    parse_type         ( Str type_def        );
+GEN_API CodeTypedef     parse_typedef      ( Str typedef_def     );
+GEN_API CodeUnion       parse_union        ( Str union_def       );
+GEN_API CodeUsing       parse_using        ( Str using_def       );
+GEN_API CodeVar         parse_variable     ( Str var_def         );
 
 #pragma endregion Parsing
 
 #pragma region Untyped text
 
-ssize   token_fmt_va( char* buf, usize buf_size, s32 num_tokens, va_list va );
+GEN_API ssize token_fmt_va( char* buf, usize buf_size, s32 num_tokens, va_list va );
 //! Do not use directly. Use the token_fmt macro instead.
-Str token_fmt_impl( ssize, ... );
+GEN_API Str token_fmt_impl( ssize, ... );
 
-Code untyped_str      ( Str content);
-Code untyped_fmt      ( char const* fmt, ... );
-Code untyped_token_fmt( s32 num_tokens, char const* fmt, ... );
+GEN_API Code untyped_str( Str content);
+GEN_API Code untyped_fmt      ( char const* fmt, ... );
+GEN_API Code untyped_token_fmt( s32 num_tokens, char const* fmt, ... );
 
 #pragma endregion Untyped text
 
@@ -7660,12 +8084,12 @@ Code untyped_token_fmt( s32 num_tokens, char const* fmt, ... );
 #ifndef name
 //	Convienence for defining any name used with the gen api.
 //  Lets you provide the length and string literal to the functions without the need for the DSL.
-#define name( Id_ )   { sizeof(stringize( Id_ )) - 1, stringize(Id_) }
+#define name( Id_ )   { stringize(Id_), sizeof(stringize( Id_ )) - 1 }
 #endif
 
 #ifndef code
 //  Same as name just used to indicate intention of literal for code instead of names.
-#define code( ... ) { sizeof(stringize(__VA_ARGS__)) - 1, stringize( __VA_ARGS__ ) }
+#define code( ... ) { stringize( __VA_ARGS__ ), sizeof(stringize(__VA_ARGS__)) - 1 }
 #endif
 
 #ifndef args
@@ -8124,7 +8548,7 @@ Str token_fmt_impl( ssize num, ... )
 	ssize result = token_fmt_va(buf, GEN_PRINTF_MAXLEN, num, va);
 	va_end(va);
 
-	Str str = { result, buf };
+	Str str = { buf, result };
 	return str;
 }
 #pragma endregion Interface
@@ -9091,53 +9515,6 @@ GEN_OPITMIZE_MAPPINGS_END
 
 #pragma region Constants
 
-#ifndef GEN_GLOBAL_BUCKET_SIZE
-#	define GEN_GLOBAL_BUCKET_SIZE megabytes(8)
-#endif
-#ifndef GEN_CODEPOOL_NUM_BLOCKS
-#	define GEN_CODEPOOL_NUM_BLOCKS kilobytes(16)
-#endif
-#ifndef GEN_SIZE_PER_STRING_ARENA
-#	define GEN_SIZE_PER_STRING_ARENA megabytes(1)
-#endif
-#ifndef GEN_MAX_COMMENT_LINE_LENGTH
-#	define GEN_MAX_COMMENT_LINE_LENGTH 1024
-#endif
-#ifndef GEN_MAX_NAME_LENGTH
-#	define GEN_MAX_NAME_LENGTH 128
-#endif
-#ifndef GEN_MAX_UNTYPED_STR_LENGTH
-#	define GEN_MAX_UNTYPED_STR_LENGTH megabytes(1)
-#endif
-#ifndef TokenMap_FixedArena
-#	define TokenMap_FixedArena FixedArena_8KB
-#endif
-#ifndef GEN_LEX_ALLOCATOR_SIZE
-#	define GEN_LEX_ALLOCATOR_SIZE megabytes(4)
-#endif
-#ifndef GEN_BUILDER_STR_BUFFER_RESERVE
-#	define GEN_BUILDER_STR_BUFFER_RESERVE megabytes(2)
-#endif
-
-// These constexprs are used for allocation behavior of data structures
-// or string handling while constructing or serializing.
-// Change them to suit your needs.
-
-constexpr s32 InitSize_DataArrays = 16;
-
-// NOTE: This limits the maximum size of an allocation
-// If you are generating a string larger than this, increase the size of the bucket here.
-constexpr usize  Global_BucketSize      = GEN_GLOBAL_BUCKET_SIZE;
-constexpr s32 CodePool_NumBlocks        = GEN_CODEPOOL_NUM_BLOCKS;
-constexpr s32 SizePer_StringArena       = GEN_SIZE_PER_STRING_ARENA;
-
-constexpr s32 MaxCommentLineLength      = GEN_MAX_COMMENT_LINE_LENGTH;
-constexpr s32 MaxNameLength             = GEN_MAX_NAME_LENGTH;
-constexpr s32 MaxUntypedStrLength       = GEN_MAX_UNTYPED_STR_LENGTH;
-// constexpr s32 TokenFmt_TokenMap_MemSize	= GEN_TOKEN_FMT_TOKEN_MAP_MEM_SIZE;
-constexpr s32 LexAllocator_Size         = GEN_LEX_ALLOCATOR_SIZE;
-constexpr s32 Builder_StrBufferReserve  = GEN_BUILDER_STR_BUFFER_RESERVE;
-
 extern Str enum_underlying_sig;
 
 extern Code access_public;
@@ -9196,6 +9573,7 @@ extern CodeTypename t_typename;
 
 #ifdef GEN_DEFINE_LIBRARY_CODE_CONSTANTS
 	// Predefined typename codes. Are set to readonly and are setup during gen::init()
+	extern Context* _ctx;
 
 	extern CodeTypename t_b32;
 
@@ -9217,31 +9595,6 @@ extern CodeTypename t_typename;
 #endif
 
 #pragma endregion Constants
-
-// Used by the lexer to persistently treat all these identifiers as preprocessor defines.
-// Populate with strings via gen::get_cached_string.
-// Functional defines must have format: id( ;at minimum to indicate that the define is only valid with arguments.
-extern Array(StringCached) PreprocessorDefines;
-
-#ifdef GEN_EXPOSE_BACKEND
-	// Global allocator used for data with process lifetime.
-	extern AllocatorInfo  GlobalAllocator;
-	extern Array(Arena) Global_AllocatorBuckets;
-
-	extern Array(Pool)  CodePools;
-	extern Array(Arena) StringArenas;
-
-	extern StringTable StringCache;
-
-	extern Arena LexArena;
-
-	extern AllocatorInfo Allocator_DataArrays;
-	extern AllocatorInfo Allocator_CodePool;
-	extern AllocatorInfo Allocator_Lexer;
-	extern AllocatorInfo Allocator_StringArena;
-	extern AllocatorInfo Allocator_StringTable;
-	extern AllocatorInfo Allocator_TypeTable;
-#endif
 
 #pragma region Builder
 
@@ -9295,6 +9648,37 @@ void    builder_print_fmt( Builder& builder, char const* fmt, ...) {
 #endif
 
 #pragma endregion Builder
+
+#pragma region Scanner
+
+// This is a simple file reader that reads the entire file into memory.
+// It has an extra option to skip the first few lines for undesired includes.
+// This is done so that includes can be kept in dependency and component files so that intellisense works.
+Code scan_file( char const* path );
+
+CodeBody parse_file( const char* path );
+
+// The follow is basic support for light csv parsing (use it as an example)
+// Make something robust if its more serious.
+
+typedef struct CSV_Column CSV_Column;
+struct CSV_Column {
+	CSV_Object      ADT;
+	Array(ADT_Node) Content;
+};
+
+typedef struct CSV_Columns2 CSV_Columns2;
+struct CSV_Columns2 {
+	CSV_Object      ADT;
+	Array(ADT_Node) Col_1;
+	Array(ADT_Node) Col_2;
+};
+
+CSV_Column parse_csv_one_column(AllocatorInfo allocator, char const* path);
+CSV_Columns2 parse_csv_two_columns(AllocatorInfo allocator, char const* path);
+
+#pragma endregion Scanner
+
 GEN_NS_END
 
 #pragma region GENCPP IMPLEMENTATION GUARD
@@ -9386,8 +9770,8 @@ GEN_NS_END
 #endif
 
 #pragma endregion Macros and Includes
-GEN_NS_BEGIN
 
+GEN_NS_BEGIN
 
 #pragma region Debug
 
@@ -9431,7 +9815,7 @@ s32 assert_crash( char const* condition )
 
 #pragma endregion Debug
 
-#pragma region StrBuilder Ops
+#pragma region String Ops
 
 internal
 ssize _scan_zpl_i64( const char* text, s32 base, s64* value )
@@ -9639,7 +10023,7 @@ f64 c_str_to_f64( const char* str, char** end_ptr )
 	return result;
 }
 
-#pragma endregion StrBuilder Ops
+#pragma endregion String Ops
 
 #pragma region Printing
 
@@ -11179,7 +11563,7 @@ GEN_FILE_OPEN_PROC( _posix_file_open )
 
 internal void _dirinfo_free_entry( DirEntry* entry );
 
-// TODO : Is this a bad idea?
+// TODO(zpl) : Is this a bad idea?
 global b32      _std_file_set                     = false;
 global FileInfo _std_files[ EFileStandard_COUNT ] = {
 {
@@ -12839,31 +13223,15 @@ GEN_NS_END
 GEN_NS_BEGIN
 
 #pragma region StaticData
-
-// TODO : Convert global allocation strategy to use a slab allocation strategy.
-global AllocatorInfo  GlobalAllocator;
-global Array( Arena )   Global_AllocatorBuckets;
-
-// TODO(Ed) : Make the code pool a dynamic arena
-global Array( Pool )  CodePools         = { nullptr };
-global Array( Arena ) StringArenas      = { nullptr };
-
-global StringTable StringCache;
-
-global Arena LexArena;
-
-global AllocatorInfo Allocator_DataArrays  = {0};
-global AllocatorInfo Allocator_CodePool    = {0};
-global AllocatorInfo Allocator_Lexer       = {0};
-global AllocatorInfo Allocator_StringArena = {0};
-global AllocatorInfo Allocator_StringTable = {0};
-global AllocatorInfo Allocator_TypeTable   = {0};
-
-#pragma endregion StaticData
+global Context* _ctx;
 
 #pragma region Constants
+global u32 context_counter;
 
 global Str enum_underlying_sig;
+
+global Code Code_Global;
+global Code Code_Invalid;
 
 global Code access_public;
 global Code access_protected;
@@ -12919,8 +13287,6 @@ global CodeTypename t_wchar_t;
 global CodeTypename t_class;
 global CodeTypename t_typename;
 
-global Array(StringCached) PreprocessorDefines;
-
 #ifdef GEN_DEFINE_LIBRARY_CODE_CONSTANTS
 global CodeTypename t_b32;
 
@@ -12942,6 +13308,9 @@ global CodeTypename t_f64;
 #endif
 
 #pragma endregion Constants
+
+#pragma endregion StaticData
+
 #pragma region AST
 
 // These macros are used in the swtich cases are used within ast.cpp, inteface.upfront.cpp, parser.cpp
@@ -13025,14 +13394,11 @@ global CodeTypename t_f64;
 	case CT_Struct_Body:                          \
 	case CT_Typename
 
-global Code Code_Global;
-global Code Code_Invalid;
-
 // This serializes all the data-members in a "debug" format, where each member is printed with its associated value.
 Str code_debug_str(Code self)
 {
 	GEN_ASSERT(self != nullptr);
-	StrBuilder  result_stack = strbuilder_make_reserve( GlobalAllocator, kilobytes(1) );
+	StrBuilder  result_stack = strbuilder_make_reserve( _ctx->Allocator_Temp, kilobytes(1) );
 	StrBuilder* result       = & result_stack;
 
 	if ( self->Parent )
@@ -13084,11 +13450,11 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt   : %S", self->InlineCmt  ? self->InlineCmt->Content                           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes  : %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParentAccess: %S", self->ParentType ? access_spec_to_str( self->ParentAccess )           : txt("No Parent") );
-			strbuilder_append_fmt( result, "\n\tParentType  : %S", self->ParentType ? code_type_str(self->ParentType)                    : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody        : %S", self->Body       ? code_debug_str(self->Body)                         : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt   : %S", self->InlineCmt  ? self->InlineCmt->Content                                  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes  : %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParentAccess: %S", self->ParentType ? access_spec_to_str( self->ParentAccess )                  : txt("No Parent") );
+			strbuilder_append_fmt( result, "\n\tParentType  : %S", self->ParentType ? code_type_str(self->ParentType)                           : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody        : %S", self->Body       ? code_debug_str(self->Body)                                : txt("Null") );
 		break;
 
 		case CT_Class_Fwd:
@@ -13098,10 +13464,10 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt   : %S", self->InlineCmt  ? self->InlineCmt->Content                           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes  : %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParentAccess: %S", self->ParentType ? access_spec_to_str( self->ParentAccess )           : txt("No Parent") );
-			strbuilder_append_fmt( result, "\n\tParentType  : %S", self->ParentType ? code_type_str(self->ParentType)                    : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt   : %S", self->InlineCmt  ? self->InlineCmt->Content                                  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes  : %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParentAccess: %S", self->ParentType ? access_spec_to_str( self->ParentAccess )                  : txt("No Parent") );
+			strbuilder_append_fmt( result, "\n\tParentType  : %S", self->ParentType ? code_type_str(self->ParentType)                           : txt("Null") );
 		break;
 
 		case CT_Constructor:
@@ -13110,11 +13476,11 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt      : %S", self->InlineCmt       ? self->InlineCmt->Content                                : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs           ? strbuilder_to_str( code_to_string(self->Specs) )           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tInitializerList: %S", self->InitializerList ? strbuilder_to_str( code_to_string(self->InitializerList) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParams         : %S", self->Params          ? strbuilder_to_str( code_to_string(self->Params) )          : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody           : %S", self->Body            ? code_debug_str(self->Body)                              : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt      : %S", self->InlineCmt       ? self->InlineCmt->Content                                       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs           ? strbuilder_to_str( code_to_strbuilder(self->Specs) )           : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInitializerList: %S", self->InitializerList ? strbuilder_to_str( code_to_strbuilder(self->InitializerList) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams         : %S", self->Params          ? strbuilder_to_str( code_to_strbuilder(self->Params) )          : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody           : %S", self->Body            ? code_debug_str(self->Body)                                     : txt("Null") );
 		break;
 
 		case CT_Constructor_Fwd:
@@ -13123,10 +13489,10 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt      : %S", self->InlineCmt       ? self->InlineCmt->Content                                : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs           ? strbuilder_to_str( code_to_string(self->Specs) )           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tInitializerList: %S", self->InitializerList ? strbuilder_to_str( code_to_string(self->InitializerList) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParams         : %S", self->Params          ? strbuilder_to_str( code_to_string(self->Params) )          : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt      : %S", self->InlineCmt       ? self->InlineCmt->Content                                       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs           ? strbuilder_to_str( code_to_strbuilder(self->Specs) )           : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInitializerList: %S", self->InitializerList ? strbuilder_to_str( code_to_strbuilder(self->InitializerList) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams         : %S", self->Params          ? strbuilder_to_str( code_to_strbuilder(self->Params) )          : txt("Null") );
 		break;
 
 		case CT_Destructor:
@@ -13135,9 +13501,9 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt      : %S", self->InlineCmt       ? self->InlineCmt->Content                      : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs           ? strbuilder_to_str( code_to_string(self->Specs) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody           : %S", self->Body            ? code_debug_str(self->Body)                    : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt      : %S", self->InlineCmt       ? self->InlineCmt->Content                             : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs           ? strbuilder_to_str( code_to_strbuilder(self->Specs) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody           : %S", self->Body            ? code_debug_str(self->Body)                           : txt("Null") );
 		break;
 
 		case CT_Destructor_Fwd:
@@ -13150,10 +13516,10 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt       : %S", self->InlineCmt      ? self->InlineCmt->Content                              : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes      : %S", self->Attributes     ? strbuilder_to_str( code_to_string(self->Attributes) )    : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tUnderlying Type : %S", self->UnderlyingType ? strbuilder_to_str( code_to_string(self->UnderlyingType)) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody            : %S", self->Body           ? code_debug_str(self->Body)                            : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt       : %S", self->InlineCmt      ? self->InlineCmt->Content                                     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes      : %S", self->Attributes     ? strbuilder_to_str( code_to_strbuilder(self->Attributes) )    : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tUnderlying Type : %S", self->UnderlyingType ? strbuilder_to_str( code_to_strbuilder(self->UnderlyingType)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody            : %S", self->Body           ? code_debug_str(self->Body)                                   : txt("Null") );
 		break;
 
 		case CT_Enum_Fwd:
@@ -13163,9 +13529,9 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt       : %S", self->InlineCmt      ? self->InlineCmt->Content                              : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes      : %S", self->Attributes     ? strbuilder_to_str( code_to_string(self->Attributes) )    : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tUnderlying Type : %S", self->UnderlyingType ? strbuilder_to_str( code_to_string(self->UnderlyingType)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt       : %S", self->InlineCmt      ? self->InlineCmt->Content                                     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes      : %S", self->Attributes     ? strbuilder_to_str( code_to_strbuilder(self->Attributes) )    : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tUnderlying Type : %S", self->UnderlyingType ? strbuilder_to_str( code_to_strbuilder(self->UnderlyingType)) : txt("Null") );
 		break;
 
 		case CT_Extern_Linkage:
@@ -13184,8 +13550,8 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt  : %S", self->InlineCmt   ? self->InlineCmt->Content                           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tDeclaration: %S", self->Declaration ? strbuilder_to_str( code_to_string(self->Declaration)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt  : %S", self->InlineCmt   ? self->InlineCmt->Content                                  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tDeclaration: %S", self->Declaration ? strbuilder_to_str( code_to_strbuilder(self->Declaration)) : txt("Null") );
 		break;
 
 		case CT_Function:
@@ -13194,12 +13560,12 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_string(self->Specs))       : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_string(self->ReturnType))  : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_string(self->Params))      : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)                         : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                                  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_strbuilder(self->Specs))       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_strbuilder(self->ReturnType))  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_strbuilder(self->Params))      : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)                                : txt("Null") );
 		break;
 
 		case CT_Function_Fwd:
@@ -13208,11 +13574,11 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_string(self->Specs))       : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_string(self->ReturnType))  : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_string(self->Params))      : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                                  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_strbuilder(self->Specs))       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_strbuilder(self->ReturnType))  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_strbuilder(self->Params))      : txt("Null") );
 		break;
 
 		case CT_Module:
@@ -13229,12 +13595,12 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_string(self->Specs))       : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_string(self->ReturnType))  : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_string(self->Params))      : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)                         : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                                  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_strbuilder(self->Specs))       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_strbuilder(self->ReturnType))  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_strbuilder(self->Params))      : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)                                : txt("Null") );
 			strbuilder_append_fmt( result, "\n\tOp        : %S", operator_to_str( self->Op ) );
 		break;
 
@@ -13245,11 +13611,11 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                           : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_string(self->Specs) )      : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_string(self->ReturnType) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_string(self->Params) )     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                                  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_strbuilder(self->Specs) )      : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tReturnType: %S", self->ReturnType ? strbuilder_to_str( code_to_strbuilder(self->ReturnType) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams    : %S", self->Params     ? strbuilder_to_str( code_to_strbuilder(self->Params) )     : txt("Null") );
 			strbuilder_append_fmt( result, "\n\tOp        : %S", operator_to_str( self->Op ) );
 		break;
 
@@ -13259,10 +13625,10 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                         : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_string(self->Specs))     : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tValueType : %S", self->ValueType  ? strbuilder_to_str( code_to_string(self->ValueType)) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)                       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                                : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_strbuilder(self->Specs))     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tValueType : %S", self->ValueType  ? strbuilder_to_str( code_to_strbuilder(self->ValueType)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)                              : txt("Null") );
 		break;
 
 		case CT_Operator_Cast_Fwd:
@@ -13271,17 +13637,17 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                         : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_string(self->Specs))     : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tValueType : %S", self->ValueType  ? strbuilder_to_str( code_to_string(self->ValueType)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt : %S", self->InlineCmt  ? self->InlineCmt->Content                                : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs     : %S", self->Specs      ? strbuilder_to_str( code_to_strbuilder(self->Specs))     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tValueType : %S", self->ValueType  ? strbuilder_to_str( code_to_strbuilder(self->ValueType)) : txt("Null") );
 		break;
 
 		case CT_Parameters:
 			strbuilder_append_fmt( result, "\n\tNumEntries: %d", self->NumEntries );
 			strbuilder_append_fmt( result, "\n\tLast      : %S", self->Last->Name );
 			strbuilder_append_fmt( result, "\n\tNext      : %S", self->Next->Name );
-			strbuilder_append_fmt( result, "\n\tValueType : %S", self->ValueType ? strbuilder_to_str( code_to_string(self->ValueType)) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tValue     : %S", self->Value     ? strbuilder_to_str( code_to_string(self->Value))     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tValueType : %S", self->ValueType ? strbuilder_to_str( code_to_strbuilder(self->ValueType)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tValue     : %S", self->Value     ? strbuilder_to_str( code_to_strbuilder(self->Value))     : txt("Null") );
 		break;
 
 		case CT_Specifiers:
@@ -13307,8 +13673,8 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tParams     : %S", self->Params      ? strbuilder_to_str( code_to_string(self->Params))      : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tDeclaration: %S", self->Declaration ? strbuilder_to_str( code_to_string(self->Declaration)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams     : %S", self->Params      ? strbuilder_to_str( code_to_strbuilder(self->Params))      : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tDeclaration: %S", self->Declaration ? strbuilder_to_str( code_to_strbuilder(self->Declaration)) : txt("Null") );
 		break;
 
 		case CT_Typedef:
@@ -13317,16 +13683,16 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt     : %S", self->InlineCmt      ? self->InlineCmt->Content                              : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tUnderlyingType: %S", self->UnderlyingType ? strbuilder_to_str( code_to_string(self->UnderlyingType)) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt     : %S", self->InlineCmt      ? self->InlineCmt->Content                                     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tUnderlyingType: %S", self->UnderlyingType ? strbuilder_to_str( code_to_strbuilder(self->UnderlyingType)) : txt("Null") );
 		break;
 
 		case CT_Typename:
-			strbuilder_append_fmt( result, "\n\tAttributes     : %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs      ? strbuilder_to_str( code_to_string(self->Specs))       : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tReturnType     : %S", self->ReturnType ? strbuilder_to_str( code_to_string(self->ReturnType))  : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tParams         : %S", self->Params     ? strbuilder_to_str( code_to_string(self->Params))      : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tArrExpr        : %S", self->ArrExpr    ? strbuilder_to_str( code_to_string(self->ArrExpr))     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes     : %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs          : %S", self->Specs      ? strbuilder_to_str( code_to_strbuilder(self->Specs))       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tReturnType     : %S", self->ReturnType ? strbuilder_to_str( code_to_strbuilder(self->ReturnType))  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tParams         : %S", self->Params     ? strbuilder_to_str( code_to_strbuilder(self->Params))      : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tArrExpr        : %S", self->ArrExpr    ? strbuilder_to_str( code_to_strbuilder(self->ArrExpr))     : txt("Null") );
 		break;
 
 		case CT_Union:
@@ -13335,8 +13701,8 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_string(self->Attributes) ) : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)       : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes: %S", self->Attributes ? strbuilder_to_str( code_to_strbuilder(self->Attributes) ) : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBody      : %S", self->Body       ? code_debug_str(self->Body)                                : txt("Null") );
 		break;
 
 		case CT_Using:
@@ -13345,9 +13711,9 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt     : %S", self->InlineCmt      ? self->InlineCmt->Content                               : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes    : %S", self->Attributes     ? strbuilder_to_str( code_to_string(self->Attributes) )     : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tUnderlyingType: %S", self->UnderlyingType ? strbuilder_to_str( code_to_string(self->UnderlyingType))  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt     : %S", self->InlineCmt      ? self->InlineCmt->Content                                      : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes    : %S", self->Attributes     ? strbuilder_to_str( code_to_strbuilder(self->Attributes) )     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tUnderlyingType: %S", self->UnderlyingType ? strbuilder_to_str( code_to_strbuilder(self->UnderlyingType))  : txt("Null") );
 		break;
 
 		case CT_Variable:
@@ -13355,10 +13721,10 @@ Str code_debug_str(Code self)
 			if ( self->Parent && self->Parent->Type == CT_Variable )
 			{
 				// Its a NextVar
-				strbuilder_append_fmt( result, "\n\tSpecs       : %S", self->Specs        ? strbuilder_to_str( code_to_string(self->Specs))        : txt("Null") );
-				strbuilder_append_fmt( result, "\n\tValue       : %S", self->Value        ? strbuilder_to_str( code_to_string(self->Value))        : txt("Null") );
-				strbuilder_append_fmt( result, "\n\tBitfieldSize: %S", self->BitfieldSize ? strbuilder_to_str( code_to_string(self->BitfieldSize)) : txt("Null") );
-				strbuilder_append_fmt( result, "\n\tNextVar     : %S", self->NextVar      ? code_debug_str(self->NextVar)                       : txt("Null") );
+				strbuilder_append_fmt( result, "\n\tSpecs       : %S", self->Specs        ? strbuilder_to_str( code_to_strbuilder(self->Specs))        : txt("Null") );
+				strbuilder_append_fmt( result, "\n\tValue       : %S", self->Value        ? strbuilder_to_str( code_to_strbuilder(self->Value))        : txt("Null") );
+				strbuilder_append_fmt( result, "\n\tBitfieldSize: %S", self->BitfieldSize ? strbuilder_to_str( code_to_strbuilder(self->BitfieldSize)) : txt("Null") );
+				strbuilder_append_fmt( result, "\n\tNextVar     : %S", self->NextVar      ? code_debug_str(self->NextVar)                              : txt("Null") );
 				break;
 			}
 
@@ -13367,13 +13733,13 @@ Str code_debug_str(Code self)
 			if ( self->Next )
 				strbuilder_append_fmt( result, "\n\tNext: %S %S", code_type_str(self->Prev), self->Prev->Name.Len ? self->Prev->Name : txt("Null") );
 
-			strbuilder_append_fmt( result, "\n\tInlineCmt   : %S", self->InlineCmt    ? self->InlineCmt->Content                             : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tAttributes  : %S", self->Attributes   ? strbuilder_to_str( code_to_string(self->Attributes) )   : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tSpecs       : %S", self->Specs        ? strbuilder_to_str( code_to_string(self->Specs))         : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tValueType   : %S", self->ValueType    ? strbuilder_to_str( code_to_string(self->ValueType))     : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tBitfieldSize: %S", self->BitfieldSize ? strbuilder_to_str( code_to_string(self->BitfieldSize))  : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tValue       : %S", self->Value        ? strbuilder_to_str( code_to_string(self->Value))         : txt("Null") );
-			strbuilder_append_fmt( result, "\n\tNextVar     : %S", self->NextVar      ? code_debug_str(self->NextVar)                        : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tInlineCmt   : %S", self->InlineCmt    ? self->InlineCmt->Content                                    : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tAttributes  : %S", self->Attributes   ? strbuilder_to_str( code_to_strbuilder(self->Attributes) )   : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tSpecs       : %S", self->Specs        ? strbuilder_to_str( code_to_strbuilder(self->Specs))         : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tValueType   : %S", self->ValueType    ? strbuilder_to_str( code_to_strbuilder(self->ValueType))     : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tBitfieldSize: %S", self->BitfieldSize ? strbuilder_to_str( code_to_strbuilder(self->BitfieldSize))  : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tValue       : %S", self->Value        ? strbuilder_to_str( code_to_strbuilder(self->Value))         : txt("Null") );
+			strbuilder_append_fmt( result, "\n\tNextVar     : %S", self->NextVar      ? code_debug_str(self->NextVar)                               : txt("Null") );
 		break;
 	}
 
@@ -13392,9 +13758,9 @@ Code code_duplicate(Code self)
 	return result;
 }
 
-StrBuilder code_to_string(Code self)
+StrBuilder code_to_strbuilder(Code self)
 {
-	StrBuilder result = strbuilder_make_str( GlobalAllocator, txt("") );
+	StrBuilder result = strbuilder_make_str( _ctx->Allocator_Temp, txt("") );
 	code_to_strbuilder_ptr( self, & result );
 	return result;
 }
@@ -13477,7 +13843,7 @@ void code_to_strbuilder_ptr( Code self, StrBuilder* result )
 		break;
 
 		case CT_Extern_Linkage:
-			extern_to_string(cast(CodeExtern, self), result );
+			extern_to_strbuilder(cast(CodeExtern, self), result );
 		break;
 
 		case CT_Friend:
@@ -13634,7 +14000,7 @@ bool code_is_equal( Code self, Code other )
 	{
 		log_fmt("AST::is_equal: Type check failure with other\nAST: %S\nOther: %S"
 			, code_debug_str(self)
-			,code_debug_str(other)
+			, code_debug_str(other)
 		);
 
 		return false;
@@ -13646,8 +14012,8 @@ bool code_is_equal( Code self, Code other )
 	if ( self->val != other->val )                            \
 	{                                                         \
 		log_fmt("\nAST::is_equal: Member - " #val " failed\n" \
-		        "AST  : %S\n"                                \
-		        "Other: %S\n"                                \
+		        "AST  : %S\n"                                 \
+		        "Other: %S\n"                                 \
 		    , code_debug_str(self)                            \
 		    ,code_debug_str(other)                            \
 		);                                                    \
@@ -13656,11 +14022,11 @@ bool code_is_equal( Code self, Code other )
 	}
 
 	#define check_member_str( str )                                 \
-	if ( ! str_are_equal( self->str, other->str ) )                \
+	if ( ! str_are_equal( self->str, other->str ) )                 \
 	{                                                               \
 		log_fmt("\nAST::is_equal: Member string - "#str " failed\n" \
-				"AST  : %S\n"                                      \
-				"Other: %S\n"                                      \
+				"AST  : %S\n"                                       \
+				"Other: %S\n"                                       \
 			, code_debug_str(self)                                  \
 			,code_debug_str(other)                                  \
 		);                                                          \
@@ -13668,23 +14034,23 @@ bool code_is_equal( Code self, Code other )
 		return false;                                               \
 	}
 
-	#define check_member_content( content )                                \
-	if ( ! str_are_equal( self->content, other->content ))                \
-	{                                                                      \
-		log_fmt("\nAST::is_equal: Member content - "#content " failed\n"   \
-				"AST  : %S\n"                                             \
-				"Other: %S\n"                                             \
-			, code_debug_str(self)                                         \
-			, code_debug_str(other)                                        \
-		);                                                                 \
-                                                                           \
-		log_fmt("Content cannot be trusted to be unique with this check "  \
-			"so it must be verified by eye for now\n"                      \
-			"AST   Content:\n%S\n"                                        \
-			"Other Content:\n%S\n"                                        \
-			, str_visualize_whitespace(self->content, GlobalAllocator)    \
-			, str_visualize_whitespace(other->content, GlobalAllocator)   \
-		);                                                                 \
+	#define check_member_content( content )                                  \
+	if ( ! str_are_equal( self->content, other->content ))                   \
+	{                                                                        \
+		log_fmt("\nAST::is_equal: Member content - "#content " failed\n"     \
+				"AST  : %S\n"                                                \
+				"Other: %S\n"                                                \
+			, code_debug_str(self)                                           \
+			, code_debug_str(other)                                          \
+		);                                                                   \
+                                                                             \
+		log_fmt("Content cannot be trusted to be unique with this check "    \
+			"so it must be verified by eye for now\n"                        \
+			"AST   Content:\n%S\n"                                           \
+			"Other Content:\n%S\n"                                           \
+			, str_visualize_whitespace(self->content, _ctx->Allocator_Temp)  \
+			, str_visualize_whitespace(other->content, _ctx->Allocator_Temp) \
+		);                                                                   \
 	}
 
 	#define check_member_ast( ast )                                                                \
@@ -13693,9 +14059,9 @@ bool code_is_equal( Code self, Code other )
 		if ( other->ast == nullptr )                                                               \
 		{                                                                                          \
 			log_fmt("\nAST::is_equal: Failed for member " #ast " other equivalent param is null\n" \
-					"AST  : %S\n"                                                                 \
-					"Other: %S\n"                                                                 \
-					"For ast member: %S\n"                                                        \
+					"AST  : %S\n"                                                                  \
+					"Other: %S\n"                                                                  \
+					"For ast member: %S\n"                                                         \
 				, code_debug_str(self)                                                             \
 				, code_debug_str(other)                                                            \
 				, code_debug_str(self->ast)                                                        \
@@ -13707,10 +14073,10 @@ bool code_is_equal( Code self, Code other )
 		if ( ! code_is_equal(self->ast, other->ast ) )                                             \
 		{                                                                                          \
 			log_fmt( "\nAST::is_equal: Failed for " #ast"\n"                                       \
-					"AST  : %S\n"                                                                 \
-					"Other: %S\n"                                                                 \
-					"For     ast member: %S\n"                                                    \
-					"other's ast member: %S\n"                                                    \
+					"AST  : %S\n"                                                                  \
+					"Other: %S\n"                                                                  \
+					"For     ast member: %S\n"                                                     \
+					"other's ast member: %S\n"                                                     \
 				, code_debug_str(self)                                                             \
 				, code_debug_str(other)                                                            \
 				, code_debug_str(self->ast)                                                        \
@@ -14305,14 +14671,13 @@ bool code_validate_body(Code self)
 			log_failure( "AST::validate_body: Invalid this AST does not have a body %S", code_debug_str(self) );
 			return false;
 	}
-
 	return false;
 }
 
 inline
-StrBuilder attributes_to_string(CodeAttributes attributes) {
+StrBuilder attributes_to_strbuilder(CodeAttributes attributes) {
 	GEN_ASSERT(attributes);
-	char* raw = ccast(char*, str_duplicate( attributes->Content, GlobalAllocator ).Ptr);
+	char* raw = ccast(char*, str_duplicate( attributes->Content, _ctx->Allocator_Temp ).Ptr);
 	StrBuilder result = { raw };
 	return result;
 }
@@ -14324,10 +14689,10 @@ void attributes_to_strbuilder_ref(CodeAttributes attributes, StrBuilder* result)
 	strbuilder_append_str(result, attributes->Content);
 }
 
-StrBuilder body_to_string(CodeBody body)
+StrBuilder body_to_strbuilder(CodeBody body)
 {
 	GEN_ASSERT(body);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 128 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 128 );
 	switch ( body->Type )
 	{
 		case CT_Untyped:
@@ -14362,7 +14727,7 @@ void body_to_strbuilder_ref( CodeBody body, StrBuilder* result )
 	while ( left -- )
 	{
 		code_to_strbuilder_ptr(curr, result);
-		// strbuilder_append_fmt( result, "%SB", code_to_string(curr) );
+		// strbuilder_append_fmt( result, "%SB", code_to_strbuilder(curr) );
 		++curr;
 	}
 }
@@ -14378,7 +14743,7 @@ void body_to_strbuilder_export( CodeBody body, StrBuilder* result )
 	while ( left-- )
 	{
 		code_to_strbuilder_ptr(curr, result);
-		// strbuilder_append_fmt( result, "%SB", code_to_string(curr) );
+		// strbuilder_append_fmt( result, "%SB", code_to_strbuilder(curr) );
 		++curr;
 	}
 
@@ -14386,9 +14751,9 @@ void body_to_strbuilder_export( CodeBody body, StrBuilder* result )
 }
 
 inline
-StrBuilder comment_to_string(CodeComment comment) {
+StrBuilder comment_to_strbuilder(CodeComment comment) {
 	GEN_ASSERT(comment);
-	char* raw = ccast(char*, str_duplicate( comment->Content, GlobalAllocator ).Ptr);
+	char* raw = ccast(char*, str_duplicate( comment->Content, _ctx->Allocator_Temp ).Ptr);
 	StrBuilder result = { raw };
 	return result;
 }
@@ -14400,9 +14765,9 @@ void comment_to_strbuilder_ref(CodeComment comment, StrBuilder* result) {
 	strbuilder_append_str(result, comment->Content);
 }
 
-StrBuilder constructor_to_string(CodeConstructor self)
+StrBuilder constructor_to_strbuilder(CodeConstructor self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 128 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 128 );
 	switch (self->Type)
 	{
 		case CT_Constructor:
@@ -14426,17 +14791,17 @@ void constructor_to_strbuilder_def(CodeConstructor self, StrBuilder* result )
 	}
 
 	if ( self->Params )
-		strbuilder_append_fmt( result, "( %SB )", params_to_string(self->Params) );
+		strbuilder_append_fmt( result, "( %SB )", params_to_strbuilder(self->Params) );
 	else
 		strbuilder_append_str( result, txt("()") );
 
 	if ( self->InitializerList )
-		strbuilder_append_fmt( result, " : %SB", code_to_string(self->InitializerList) );
+		strbuilder_append_fmt( result, " : %SB", code_to_strbuilder(self->InitializerList) );
 
 	if ( self->InlineCmt )
 		strbuilder_append_fmt( result, " // %S", self->InlineCmt->Content );
 
-	strbuilder_append_fmt( result, "\n{\n%SB\n}\n", code_to_string(self->Body) );
+	strbuilder_append_fmt( result, "\n{\n%SB\n}\n", code_to_strbuilder(self->Body) );
 }
 
 void constructor_to_strbuilder_fwd(CodeConstructor self, StrBuilder* result )
@@ -14450,12 +14815,12 @@ void constructor_to_strbuilder_fwd(CodeConstructor self, StrBuilder* result )
 	}
 
 	if ( self->Params )
-		strbuilder_append_fmt( result, "( %SB )", params_to_string(self->Params) );
+		strbuilder_append_fmt( result, "( %SB )", params_to_strbuilder(self->Params) );
 	else
 		strbuilder_append_fmt( result, "()");
 
 	if (self->Body)
-		strbuilder_append_fmt( result, " = %SB", code_to_string(self->Body) );
+		strbuilder_append_fmt( result, " = %SB", code_to_strbuilder(self->Body) );
 
 	if ( self->InlineCmt )
 		strbuilder_append_fmt( result, "; // %S\n", self->InlineCmt->Content );
@@ -14463,9 +14828,9 @@ void constructor_to_strbuilder_fwd(CodeConstructor self, StrBuilder* result )
 		strbuilder_append_str( result, txt(";\n") );
 }
 
-StrBuilder class_to_string( CodeClass self )
+StrBuilder class_to_strbuilder( CodeClass self )
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 512 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 512 );
 	switch ( self->Type )
 	{
 		case CT_Class:
@@ -14489,13 +14854,13 @@ void class_to_strbuilder_def( CodeClass self, StrBuilder* result )
 
 	if ( self->Attributes )
 	{
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 	}
 
 	if ( self->ParentType )
 	{
 		Str access_level = access_spec_to_str( self->ParentAccess );
-		strbuilder_append_fmt( result, "%S : %S %SB", self->Name, access_level, typename_to_string(self->ParentType) );
+		strbuilder_append_fmt( result, "%S : %S %SB", self->Name, access_level, typename_to_strbuilder(self->ParentType) );
 
 		CodeTypename interface = cast(CodeTypename, self->ParentType->Next);
 		if ( interface )
@@ -14503,7 +14868,7 @@ void class_to_strbuilder_def( CodeClass self, StrBuilder* result )
 
 		while ( interface )
 		{
-			strbuilder_append_fmt( result, ", public %SB", typename_to_string(interface) );
+			strbuilder_append_fmt( result, ", public %SB", typename_to_strbuilder(interface) );
 			interface = interface->Next ? cast(CodeTypename, interface->Next) : NullCode;
 		}
 	}
@@ -14517,7 +14882,7 @@ void class_to_strbuilder_def( CodeClass self, StrBuilder* result )
 		strbuilder_append_fmt( result, " // %S", self->InlineCmt->Content );
 	}
 
-	strbuilder_append_fmt( result, "\n{\n%SB\n}", body_to_string(self->Body) );
+	strbuilder_append_fmt( result, "\n{\n%SB\n}", body_to_strbuilder(self->Body) );
 
 	if ( self->Parent == nullptr || ( self->Parent->Type != CT_Typedef && self->Parent->Type != CT_Variable ) )
 		strbuilder_append_str( result, txt(";\n") );
@@ -14531,7 +14896,7 @@ void class_to_strbuilder_fwd( CodeClass self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "class %SB %S", attributes_to_string(self->Attributes), self->Name );
+		strbuilder_append_fmt( result, "class %SB %S", attributes_to_strbuilder(self->Attributes), self->Name );
 
 	else strbuilder_append_fmt( result, "class %S", self->Name );
 
@@ -14545,9 +14910,9 @@ void class_to_strbuilder_fwd( CodeClass self, StrBuilder* result )
 	}
 }
 
-StrBuilder define_to_string(CodeDefine define)
+StrBuilder define_to_strbuilder(CodeDefine define)
 {
-	return strbuilder_fmt_buf( GlobalAllocator, "#define %S %S", define->Name, define->Content );
+	return strbuilder_fmt_buf( _ctx->Allocator_Temp, "#define %S %S", define->Name, define->Content );
 }
 
 void define_to_strbuilder_ref(CodeDefine define, StrBuilder* result )
@@ -14555,9 +14920,9 @@ void define_to_strbuilder_ref(CodeDefine define, StrBuilder* result )
 	strbuilder_append_fmt( result, "#define %S %S", define->Name, define->Content );
 }
 
-StrBuilder destructor_to_string(CodeDestructor self)
+StrBuilder destructor_to_strbuilder(CodeDestructor self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 128 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 128 );
 	switch ( self->Type )
 	{
 		case CT_Destructor:
@@ -14586,7 +14951,7 @@ void destructor_to_strbuilder_def(CodeDestructor self, StrBuilder* result )
 	else
 		strbuilder_append_fmt( result, "~%S()", self->Parent->Name );
 
-	strbuilder_append_fmt( result, "\n{\n%SB\n}\n", code_to_string(self->Body) );
+	strbuilder_append_fmt( result, "\n{\n%SB\n}\n", code_to_strbuilder(self->Body) );
 }
 
 void destructor_to_strbuilder_fwd(CodeDestructor self, StrBuilder* result )
@@ -14601,7 +14966,7 @@ void destructor_to_strbuilder_fwd(CodeDestructor self, StrBuilder* result )
 		if ( specifiers_has(self->Specs, Spec_Pure ) )
 			strbuilder_append_str( result, txt(" = 0;") );
 		else if (self->Body)
-			strbuilder_append_fmt( result, " = %SB;", code_to_string(self->Body) );
+			strbuilder_append_fmt( result, " = %SB;", code_to_strbuilder(self->Body) );
 	}
 	else
 		strbuilder_append_fmt( result, "~%S();", self->Parent->Name );
@@ -14612,9 +14977,9 @@ void destructor_to_strbuilder_fwd(CodeDestructor self, StrBuilder* result )
 		strbuilder_append_str( result, txt("\n"));
 }
 
-StrBuilder enum_to_string(CodeEnum self)
+StrBuilder enum_to_strbuilder(CodeEnum self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 512 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 512 );
 	switch ( self->Type )
 	{
 		case CT_Enum:
@@ -14643,24 +15008,24 @@ void enum_to_strbuilder_def(CodeEnum self, StrBuilder* result )
 		strbuilder_append_str( result, txt("enum ") );
 
 		if ( self->Attributes )
-			strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+			strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 		if ( self->UnderlyingType )
 			strbuilder_append_fmt( result, "%S : %SB\n{\n%SB\n}"
 				, self->Name
-				, typename_to_string(self->UnderlyingType)
-				, body_to_string(self->Body)
+				, typename_to_strbuilder(self->UnderlyingType)
+				, body_to_strbuilder(self->Body)
 			);
 		else if ( self->UnderlyingTypeMacro )
 			strbuilder_append_fmt( result, "%S %SB\n{\n%SB\n}"
 				, self->Name
-				, code_to_string(self->UnderlyingTypeMacro)
-				, body_to_string(self->Body)
+				, code_to_strbuilder(self->UnderlyingTypeMacro)
+				, body_to_strbuilder(self->Body)
 			);
 
-		else strbuilder_append_fmt( result, "%S\n{\n%SB\n}", self->Name, body_to_string(self->Body) );
+		else strbuilder_append_fmt( result, "%S\n{\n%SB\n}", self->Name, body_to_strbuilder(self->Body) );
 	}
-	else strbuilder_append_fmt( result, "enum %S\n{\n%SB\n}", self->Name, body_to_string(self->Body) );
+	else strbuilder_append_fmt( result, "enum %S\n{\n%SB\n}", self->Name, body_to_strbuilder(self->Body) );
 
 	if ( self->Parent == nullptr || ( self->Parent->Type != CT_Typedef && self->Parent->Type != CT_Variable ) )
 		strbuilder_append_str( result, txt(";\n"));
@@ -14672,14 +15037,14 @@ void enum_to_strbuilder_fwd(CodeEnum self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	if ( self->UnderlyingType )
-		strbuilder_append_fmt( result, "enum %S : %SB", self->Name, typename_to_string(self->UnderlyingType) );
+		strbuilder_append_fmt( result, "enum %S : %SB", self->Name, typename_to_strbuilder(self->UnderlyingType) );
 	else if (self->UnderlyingTypeMacro)
 	{
 		log_fmt("IDENTIFIED A UNDERLYING ENUM MACRO");
-		strbuilder_append_fmt( result, "enum %S %SB", self->Name, code_to_string(self->UnderlyingTypeMacro) );
+		strbuilder_append_fmt( result, "enum %S %SB", self->Name, code_to_strbuilder(self->UnderlyingTypeMacro) );
 	}
 	else
 		strbuilder_append_fmt( result, "enum %S", self->Name );
@@ -14704,21 +15069,21 @@ void enum_to_strbuilder_class_def(CodeEnum self, StrBuilder* result )
 
 		if ( self->Attributes )
 		{
-			strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+			strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 		}
 
 		if ( self->UnderlyingType )
 		{
-			strbuilder_append_fmt( result, "%S : %SB\n{\n%SB\n}", self->Name, typename_to_string(self->UnderlyingType), body_to_string(self->Body) );
+			strbuilder_append_fmt( result, "%S : %SB\n{\n%SB\n}", self->Name, typename_to_strbuilder(self->UnderlyingType), body_to_strbuilder(self->Body) );
 		}
 		else
 		{
-			strbuilder_append_fmt( result, "%S\n{\n%SB\n}", self->Name, body_to_string(self->Body) );
+			strbuilder_append_fmt( result, "%S\n{\n%SB\n}", self->Name, body_to_strbuilder(self->Body) );
 		}
 	}
 	else
 	{
-		strbuilder_append_fmt( result, "enum %S\n{\n%SB\n}", self->Name, body_to_string(self->Body) );
+		strbuilder_append_fmt( result, "enum %S\n{\n%SB\n}", self->Name, body_to_strbuilder(self->Body) );
 	}
 
 	if ( self->Parent == nullptr || ( self->Parent->Type != CT_Typedef && self->Parent->Type != CT_Variable ) )
@@ -14733,9 +15098,9 @@ void enum_to_strbuilder_class_fwd(CodeEnum self, StrBuilder* result )
 	strbuilder_append_str( result, txt("enum class ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
-	strbuilder_append_fmt( result, "%S : %SB", self->Name, typename_to_string(self->UnderlyingType) );
+	strbuilder_append_fmt( result, "%S : %SB", self->Name, typename_to_strbuilder(self->UnderlyingType) );
 
 	if ( self->Parent == nullptr || ( self->Parent->Type != CT_Typedef && self->Parent->Type != CT_Variable ) )
 	{
@@ -14746,25 +15111,25 @@ void enum_to_strbuilder_class_fwd(CodeEnum self, StrBuilder* result )
 	}
 }
 
-StrBuilder exec_to_string(CodeExec exec)
+StrBuilder exec_to_strbuilder(CodeExec exec)
 {
 	GEN_ASSERT(exec);
-	char* raw = ccast(char*, str_duplicate( exec->Content, GlobalAllocator ).Ptr);
+	char* raw = ccast(char*, str_duplicate( exec->Content, _ctx->Allocator_Temp ).Ptr);
 	StrBuilder result = { raw };
 	return result;
 }
 
-void extern_to_string(CodeExtern self, StrBuilder* result )
+void extern_to_strbuilder(CodeExtern self, StrBuilder* result )
 {
 	if ( self->Body )
-		strbuilder_append_fmt( result, "extern \"%S\"\n{\n%SB\n}\n", self->Name, body_to_string(self->Body) );
+		strbuilder_append_fmt( result, "extern \"%S\"\n{\n%SB\n}\n", self->Name, body_to_strbuilder(self->Body) );
 	else
 		strbuilder_append_fmt( result, "extern \"%S\"\n{}\n", self->Name );
 }
 
-StrBuilder include_to_string(CodeInclude include)
+StrBuilder include_to_strbuilder(CodeInclude include)
 {
-	return strbuilder_fmt_buf( GlobalAllocator, "#include %S\n", include->Content );
+	return strbuilder_fmt_buf( _ctx->Allocator_Temp, "#include %S\n", include->Content );
 }
 
 void include_to_strbuilder_ref( CodeInclude include, StrBuilder* result )
@@ -14772,16 +15137,16 @@ void include_to_strbuilder_ref( CodeInclude include, StrBuilder* result )
 	strbuilder_append_fmt( result, "#include %S\n", include->Content );
 }
 
-StrBuilder friend_to_string(CodeFriend self)
+StrBuilder friend_to_strbuilder(CodeFriend self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 256 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 256 );
 	friend_to_strbuilder_ref( self, & result );
 	return result;
 }
 
 void friend_to_strbuilder_ref(CodeFriend self, StrBuilder* result )
 {
-	strbuilder_append_fmt( result, "friend %SB", code_to_string(self->Declaration) );
+	strbuilder_append_fmt( result, "friend %SB", code_to_strbuilder(self->Declaration) );
 
 	if ( self->Declaration->Type != CT_Function && self->Declaration->Type != CT_Operator && (* result)[ strbuilder_length(* result) - 1 ] != ';' )
 	{
@@ -14794,9 +15159,9 @@ void friend_to_strbuilder_ref(CodeFriend self, StrBuilder* result )
 		strbuilder_append_str( result, txt("\n"));
 }
 
-StrBuilder fn_to_string(CodeFn self)
+StrBuilder fn_to_strbuilder(CodeFn self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 512 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 512 );
 	switch ( self->Type )
 	{
 		case CT_Function:
@@ -14815,7 +15180,7 @@ void fn_to_strbuilder_def(CodeFn self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, " %SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, " %SB ", attributes_to_strbuilder(self->Attributes) );
 
 	bool prefix_specs = false;
 	if ( self->Specs )
@@ -14836,13 +15201,13 @@ void fn_to_strbuilder_def(CodeFn self, StrBuilder* result )
 		strbuilder_append_str( result, txt("\n") );
 
 	if ( self->ReturnType )
-		strbuilder_append_fmt( result, "%SB %S(", typename_to_string(self->ReturnType), self->Name );
+		strbuilder_append_fmt( result, "%SB %S(", typename_to_strbuilder(self->ReturnType), self->Name );
 
 	else
 		strbuilder_append_fmt( result, "%S(", self->Name );
 
 	if ( self->Params )
-		strbuilder_append_fmt( result, "%SB)", params_to_string(self->Params) );
+		strbuilder_append_fmt( result, "%SB)", params_to_strbuilder(self->Params) );
 
 	else
 		strbuilder_append_str( result, txt(")") );
@@ -14859,7 +15224,7 @@ void fn_to_strbuilder_def(CodeFn self, StrBuilder* result )
 		}
 	}
 
-	strbuilder_append_fmt( result, "\n{\n%SB\n}\n", body_to_string(self->Body) );
+	strbuilder_append_fmt( result, "\n{\n%SB\n}\n", body_to_strbuilder(self->Body) );
 }
 
 void fn_to_strbuilder_fwd(CodeFn self, StrBuilder* result )
@@ -14868,7 +15233,7 @@ void fn_to_strbuilder_fwd(CodeFn self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	b32 prefix_specs = false;
 	if ( self->Specs )
@@ -14891,13 +15256,13 @@ void fn_to_strbuilder_fwd(CodeFn self, StrBuilder* result )
 	}
 
 	if ( self->ReturnType )
-		strbuilder_append_fmt( result, "%SB %S(", typename_to_string(self->ReturnType), self->Name );
+		strbuilder_append_fmt( result, "%SB %S(", typename_to_strbuilder(self->ReturnType), self->Name );
 
 	else
 		strbuilder_append_fmt( result, "%S(", self->Name );
 
 	if ( self->Params )
-		strbuilder_append_fmt( result, "%SB)", params_to_string(self->Params) );
+		strbuilder_append_fmt( result, "%SB)", params_to_strbuilder(self->Params) );
 
 	else
 		strbuilder_append_str( result, txt(")") );
@@ -14917,7 +15282,7 @@ void fn_to_strbuilder_fwd(CodeFn self, StrBuilder* result )
 	if ( self->Specs && specifiers_has(self->Specs, Spec_Pure ) >= 0 )
 		strbuilder_append_str( result, txt(" = 0;") );
 	else if (self->Body)
-		strbuilder_append_fmt( result, " = %SB;", body_to_string(self->Body) );
+		strbuilder_append_fmt( result, " = %SB;", body_to_strbuilder(self->Body) );
 
 	if ( self->InlineCmt )
 		strbuilder_append_fmt( result, ";  %S", self->InlineCmt->Content );
@@ -14925,9 +15290,9 @@ void fn_to_strbuilder_fwd(CodeFn self, StrBuilder* result )
 		strbuilder_append_str( result, txt(";\n") );
 }
 
-StrBuilder module_to_string(CodeModule self)
+StrBuilder module_to_strbuilder(CodeModule self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 64 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 64 );
 	module_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -14943,9 +15308,9 @@ void module_to_strbuilder_ref(CodeModule self, StrBuilder* result )
 	strbuilder_append_fmt( result, "%S;\n", self->Name );
 }
 
-StrBuilder namespace_to_string(CodeNS self)
+StrBuilder namespace_to_strbuilder(CodeNS self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 512 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 512 );
 	namespace_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -14955,12 +15320,12 @@ void namespace_to_strbuilder_ref(CodeNS self, StrBuilder* result )
 	if ( bitfield_is_equal( u32, self->ModuleFlags, ModuleFlag_Export ))
 		strbuilder_append_str( result, txt("export ") );
 
-	strbuilder_append_fmt( result, "namespace %S\n{\n%SB\n}\n", self->Name, body_to_string(self->Body) );
+	strbuilder_append_fmt( result, "namespace %S\n{\n%SB\n}\n", self->Name, body_to_strbuilder(self->Body) );
 }
 
-StrBuilder code_op_to_string(CodeOperator self)
+StrBuilder code_op_to_strbuilder(CodeOperator self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 512 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 512 );
 	switch ( self->Type )
 	{
 		case CT_Operator:
@@ -14981,10 +15346,10 @@ void code_op_to_strbuilder_def(CodeOperator self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	if ( self->Specs )
 	{
@@ -15004,10 +15369,10 @@ void code_op_to_strbuilder_def(CodeOperator self, StrBuilder* result )
 	}
 
 	if ( self->ReturnType )
-		strbuilder_append_fmt( result, "%SB %S (", typename_to_string(self->ReturnType), self->Name );
+		strbuilder_append_fmt( result, "%SB %S (", typename_to_strbuilder(self->ReturnType), self->Name );
 
 	if ( self->Params )
-		strbuilder_append_fmt( result, "%SB)", params_to_string(self->Params) );
+		strbuilder_append_fmt( result, "%SB)", params_to_strbuilder(self->Params) );
 
 	else
 		strbuilder_append_str( result, txt(")") );
@@ -15025,7 +15390,7 @@ void code_op_to_strbuilder_def(CodeOperator self, StrBuilder* result )
 	}
 
 	strbuilder_append_fmt( result, "\n{\n%SB\n}\n"
-		, body_to_string(self->Body)
+		, body_to_strbuilder(self->Body)
 	);
 }
 
@@ -15035,7 +15400,7 @@ void code_op_to_strbuilder_fwd(CodeOperator self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB\n", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB\n", attributes_to_strbuilder(self->Attributes) );
 
 	if ( self->Specs )
 	{
@@ -15054,10 +15419,10 @@ void code_op_to_strbuilder_fwd(CodeOperator self, StrBuilder* result )
 		strbuilder_append_str( result, txt("\n") );
 	}
 
-	strbuilder_append_fmt( result, "%SB %S (", typename_to_string(self->ReturnType), self->Name );
+	strbuilder_append_fmt( result, "%SB %S (", typename_to_strbuilder(self->ReturnType), self->Name );
 
 	if ( self->Params )
-		strbuilder_append_fmt( result, "%SB)", params_to_string(self->Params) );
+		strbuilder_append_fmt( result, "%SB)", params_to_strbuilder(self->Params) );
 
 	else
 		strbuilder_append_fmt( result, ")" );
@@ -15080,9 +15445,9 @@ void code_op_to_strbuilder_fwd(CodeOperator self, StrBuilder* result )
 		strbuilder_append_str( result, txt(";\n") );
 }
 
-StrBuilder opcast_to_string(CodeOpCast self)
+StrBuilder opcast_to_strbuilder(CodeOpCast self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 128 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 128 );
 	switch ( self->Type )
 	{
 		case CT_Operator_Cast:
@@ -15109,9 +15474,9 @@ void opcast_to_strbuilder_def(CodeOpCast self, StrBuilder* result )
 		}
 
 		if ( self->Name.Ptr && self->Name.Len )
-			strbuilder_append_fmt( result, "%S operator %SB()", self->Name, typename_to_string(self->ValueType) );
+			strbuilder_append_fmt( result, "%S operator %SB()", self->Name, typename_to_strbuilder(self->ValueType) );
 		else
-			strbuilder_append_fmt( result, "operator %SB()", typename_to_string(self->ValueType) );
+			strbuilder_append_fmt( result, "operator %SB()", typename_to_strbuilder(self->ValueType) );
 
 		for ( Specifier* spec = begin_CodeSpecifiers(self->Specs); spec != end_CodeSpecifiers(self->Specs); spec = next_CodeSpecifiers(self->Specs, spec) )
 		{
@@ -15122,14 +15487,14 @@ void opcast_to_strbuilder_def(CodeOpCast self, StrBuilder* result )
 			}
 		}
 
-		strbuilder_append_fmt( result, "\n{\n%SB\n}\n", body_to_string(self->Body) );
+		strbuilder_append_fmt( result, "\n{\n%SB\n}\n", body_to_strbuilder(self->Body) );
 		return;
 	}
 
 	if ( self->Name.Ptr && self->Name.Len )
-		strbuilder_append_fmt( result, "%S operator %SB()\n{\n%SB\n}\n", self->Name, typename_to_string(self->ValueType), body_to_string(self->Body) );
+		strbuilder_append_fmt( result, "%S operator %SB()\n{\n%SB\n}\n", self->Name, typename_to_strbuilder(self->ValueType), body_to_strbuilder(self->Body) );
 	else
-		strbuilder_append_fmt( result, "operator %SB()\n{\n%SB\n}\n", typename_to_string(self->ValueType), body_to_string(self->Body) );
+		strbuilder_append_fmt( result, "operator %SB()\n{\n%SB\n}\n", typename_to_strbuilder(self->ValueType), body_to_strbuilder(self->Body) );
 }
 
 void opcast_to_strbuilder_fwd(CodeOpCast self, StrBuilder* result )
@@ -15145,7 +15510,7 @@ void opcast_to_strbuilder_fwd(CodeOpCast self, StrBuilder* result )
 			}
 		}
 
-		strbuilder_append_fmt( result, "operator %SB()", typename_to_string(self->ValueType) );
+		strbuilder_append_fmt( result, "operator %SB()", typename_to_strbuilder(self->ValueType) );
 
 		for ( Specifier* spec = begin_CodeSpecifiers(self->Specs); spec != end_CodeSpecifiers(self->Specs); spec = next_CodeSpecifiers(self->Specs, spec) )
 		{
@@ -15164,16 +15529,16 @@ void opcast_to_strbuilder_fwd(CodeOpCast self, StrBuilder* result )
 	}
 
 	if ( self->InlineCmt )
-		strbuilder_append_fmt( result, "operator %SB();  %SB", typename_to_string(self->ValueType) );
+		strbuilder_append_fmt( result, "operator %SB();  %SB", typename_to_strbuilder(self->ValueType) );
 	else
-		strbuilder_append_fmt( result, "operator %SB();\n", typename_to_string(self->ValueType) );
+		strbuilder_append_fmt( result, "operator %SB();\n", typename_to_strbuilder(self->ValueType) );
 }
 
-StrBuilder params_to_string(CodeParams self)
+StrBuilder params_to_strbuilder(CodeParams self)
 {
 	GEN_ASSERT(self);
 	GEN_ASSERT(self);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 128 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 128 );
 	params_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -15194,33 +15559,33 @@ void params_to_strbuilder_ref( CodeParams self, StrBuilder* result )
 		if ( self->ValueType == nullptr )
 			strbuilder_append_fmt( result, " %S", self->Name );
 		else
-			strbuilder_append_fmt( result, " %SB %S", typename_to_string(self->ValueType), self->Name );
+			strbuilder_append_fmt( result, " %SB %S", typename_to_strbuilder(self->ValueType), self->Name );
 
 	}
 	else if ( self->ValueType )
-		strbuilder_append_fmt( result, " %SB", typename_to_string(self->ValueType) );
+		strbuilder_append_fmt( result, " %SB", typename_to_strbuilder(self->ValueType) );
 
 	if ( self->PostNameMacro )
 	{
-		strbuilder_append_fmt( result, " %SB", code_to_string(self->PostNameMacro) );
+		strbuilder_append_fmt( result, " %SB", code_to_strbuilder(self->PostNameMacro) );
 	}
 
 	if ( self->Value )
-		strbuilder_append_fmt( result, " = %SB", code_to_string(self->Value) );
+		strbuilder_append_fmt( result, " = %SB", code_to_strbuilder(self->Value) );
 
 	if ( self->NumEntries - 1 > 0 )
 	{
 		for ( CodeParams param = begin_CodeParams(self->Next); param != end_CodeParams(self->Next); param = next_CodeParams(self->Next, param) )
 		{
-			strbuilder_append_fmt( result, ", %SB", params_to_string(param) );
+			strbuilder_append_fmt( result, ", %SB", params_to_strbuilder(param) );
 		}
 	}
 }
 
-StrBuilder preprocess_to_string(CodePreprocessCond self)
+StrBuilder preprocess_to_strbuilder(CodePreprocessCond self)
 {
 	GEN_ASSERT(self);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 256 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 256 );
 	switch ( self->Type )
 	{
 		case CT_Preprocess_If:
@@ -15281,10 +15646,10 @@ void preprocess_to_strbuilder_endif(CodePreprocessCond cond, StrBuilder* result 
 	strbuilder_append_str( result, txt("#endif\n") );
 }
 
-StrBuilder pragma_to_string(CodePragma self)
+StrBuilder pragma_to_strbuilder(CodePragma self)
 {
 	GEN_ASSERT(self);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 256 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 256 );
 	pragma_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -15294,9 +15659,9 @@ void pragma_to_strbuilder_ref(CodePragma self, StrBuilder* result )
 	strbuilder_append_fmt( result, "#pragma %S\n", self->Content );
 }
 
-StrBuilder specifiers_to_string(CodeSpecifiers self)
+StrBuilder specifiers_to_strbuilder(CodeSpecifiers self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 64 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 64 );
 	specifiers_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -15315,11 +15680,11 @@ void specifiers_to_strbuilder_ref( CodeSpecifiers self, StrBuilder* result )
 	}
 }
 
-StrBuilder struct_to_string(CodeStruct self)
+StrBuilder struct_to_strbuilder(CodeStruct self)
 {
 	GEN_ASSERT(self);
 	GEN_ASSERT(self);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 512 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 512 );
 	switch ( self->Type )
 	{
 		case CT_Struct:
@@ -15343,14 +15708,14 @@ void struct_to_strbuilder_def( CodeStruct self, StrBuilder* result )
 
 	if ( self->Attributes )
 	{
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 	}
 
 	if ( self->ParentType )
 	{
 		Str access_level = access_spec_to_str( self->ParentAccess );
 
-		strbuilder_append_fmt( result, "%S : %S %SB", self->Name, access_level, typename_to_string(self->ParentType) );
+		strbuilder_append_fmt( result, "%S : %S %SB", self->Name, access_level, typename_to_strbuilder(self->ParentType) );
 
 		CodeTypename interface = cast(CodeTypename, self->ParentType->Next);
 		if ( interface )
@@ -15358,7 +15723,7 @@ void struct_to_strbuilder_def( CodeStruct self, StrBuilder* result )
 
 		while ( interface )
 		{
-			strbuilder_append_fmt( result, ", %SB", typename_to_string(interface) );
+			strbuilder_append_fmt( result, ", %SB", typename_to_strbuilder(interface) );
 			interface = interface->Next ? cast( CodeTypename, interface->Next) : NullCode;
 		}
 	}
@@ -15372,7 +15737,7 @@ void struct_to_strbuilder_def( CodeStruct self, StrBuilder* result )
 		strbuilder_append_fmt( result, " // %S", self->InlineCmt->Content );
 	}
 
-	strbuilder_append_fmt( result, "\n{\n%SB\n}", body_to_string(self->Body) );
+	strbuilder_append_fmt( result, "\n{\n%SB\n}", body_to_strbuilder(self->Body) );
 
 	if ( self->Parent == nullptr || ( self->Parent->Type != CT_Typedef && self->Parent->Type != CT_Variable ) )
 		strbuilder_append_str( result, txt(";\n"));
@@ -15386,7 +15751,7 @@ void struct_to_strbuilder_fwd( CodeStruct self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "struct %SB %S", attributes_to_string(self->Attributes), self->Name );
+		strbuilder_append_fmt( result, "struct %SB %S", attributes_to_strbuilder(self->Attributes), self->Name );
 
 	else strbuilder_append_fmt( result, "struct %S", self->Name );
 
@@ -15399,10 +15764,10 @@ void struct_to_strbuilder_fwd( CodeStruct self, StrBuilder* result )
 	}
 }
 
-StrBuilder template_to_string(CodeTemplate self)
+StrBuilder template_to_strbuilder(CodeTemplate self)
 {
 	GEN_ASSERT(self);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 1024 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 1024 );
 	template_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -15415,14 +15780,14 @@ void template_to_strbuilder_ref(CodeTemplate self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Params )
-		strbuilder_append_fmt( result, "template< %SB >\n%SB", params_to_string(self->Params), code_to_string(self->Declaration) );
+		strbuilder_append_fmt( result, "template< %SB >\n%SB", params_to_strbuilder(self->Params), code_to_strbuilder(self->Declaration) );
 	else
-		strbuilder_append_fmt( result, "template<>\n%SB", code_to_string(self->Declaration) );
+		strbuilder_append_fmt( result, "template<>\n%SB", code_to_strbuilder(self->Declaration) );
 }
 
-StrBuilder typedef_to_string(CodeTypedef self)
+StrBuilder typedef_to_strbuilder(CodeTypedef self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 128 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 128 );
 	typedef_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -15436,18 +15801,18 @@ void typedef_to_strbuilder_ref(CodeTypedef self, StrBuilder* result )
 
 	// Determines if the typedef is a function typename
 	if ( self->UnderlyingType->ReturnType )
-		strbuilder_append_string( result, code_to_string(self->UnderlyingType) );
+		strbuilder_append_string( result, code_to_strbuilder(self->UnderlyingType) );
 	else
-		strbuilder_append_fmt( result, "%SB %S", code_to_string(self->UnderlyingType), self->Name );
+		strbuilder_append_fmt( result, "%SB %S", code_to_strbuilder(self->UnderlyingType), self->Name );
 
 	if ( self->UnderlyingType->Type == CT_Typename && self->UnderlyingType->ArrExpr )
 	{
-		strbuilder_append_fmt( result, "[ %SB ];", code_to_string(self->UnderlyingType->ArrExpr) );
+		strbuilder_append_fmt( result, "[ %SB ];", code_to_strbuilder(self->UnderlyingType->ArrExpr) );
 
 		Code next_arr_expr = self->UnderlyingType->ArrExpr->Next;
 		while ( next_arr_expr )
 		{
-			strbuilder_append_fmt( result, "[ %SB ];", code_to_string(next_arr_expr) );
+			strbuilder_append_fmt( result, "[ %SB ];", code_to_strbuilder(next_arr_expr) );
 			next_arr_expr = next_arr_expr->Next;
 		}
 	}
@@ -15462,9 +15827,9 @@ void typedef_to_strbuilder_ref(CodeTypedef self, StrBuilder* result )
 		strbuilder_append_str( result, txt("\n"));
 }
 
-StrBuilder typename_to_string(CodeTypename self)
+StrBuilder typename_to_strbuilder(CodeTypename self)
 {
-	StrBuilder result = strbuilder_make_str( GlobalAllocator, txt("") );
+	StrBuilder result = strbuilder_make_str( _ctx->Allocator_Temp, txt("") );
 	typename_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -15475,13 +15840,13 @@ void typename_to_strbuilder_ref(CodeTypename self, StrBuilder* result )
 		if ( self->ReturnType && self->Params )
 		{
 			if ( self->Attributes )
-				strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+				strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 			else
 			{
 				if ( self->Specs )
-					strbuilder_append_fmt( result, "%SB ( %S ) ( %SB ) %SB", typename_to_string(self->ReturnType), self->Name, params_to_string(self->Params), specifiers_to_string(self->Specs) );
+					strbuilder_append_fmt( result, "%SB ( %S ) ( %SB ) %SB", typename_to_strbuilder(self->ReturnType), self->Name, params_to_strbuilder(self->Params), specifiers_to_strbuilder(self->Specs) );
 				else
-					strbuilder_append_fmt( result, "%SB ( %S ) ( %SB )", typename_to_string(self->ReturnType), self->Name, params_to_string(self->Params) );
+					strbuilder_append_fmt( result, "%SB ( %S ) ( %SB )", typename_to_strbuilder(self->ReturnType), self->Name, params_to_strbuilder(self->Params) );
 			}
 
 			break;
@@ -15490,13 +15855,13 @@ void typename_to_strbuilder_ref(CodeTypename self, StrBuilder* result )
 		if ( self->ReturnType && self->Params )
 		{
 			if ( self->Attributes )
-				strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+				strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 			else
 			{
 				if ( self->Specs )
-					strbuilder_append_fmt( result, "%SB %S ( %SB ) %SB", typename_to_string(self->ReturnType), self->Name, params_to_string(self->Params), specifiers_to_string(self->Specs) );
+					strbuilder_append_fmt( result, "%SB %S ( %SB ) %SB", typename_to_strbuilder(self->ReturnType), self->Name, params_to_strbuilder(self->Params), specifiers_to_strbuilder(self->Specs) );
 				else
-					strbuilder_append_fmt( result, "%SB %S ( %SB )", typename_to_string(self->ReturnType), self->Name, params_to_string(self->Params) );
+					strbuilder_append_fmt( result, "%SB %S ( %SB )", typename_to_strbuilder(self->ReturnType), self->Name, params_to_strbuilder(self->Params) );
 			}
 
 			return;
@@ -15504,7 +15869,7 @@ void typename_to_strbuilder_ref(CodeTypename self, StrBuilder* result )
 	#endif
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	switch ( self->TypeTag )
 	{
@@ -15517,7 +15882,7 @@ void typename_to_strbuilder_ref(CodeTypename self, StrBuilder* result )
 	}
 
 	if ( self->Specs )
-		strbuilder_append_fmt( result, "%S %SB", self->Name, specifiers_to_string(self->Specs) );
+		strbuilder_append_fmt( result, "%S %SB", self->Name, specifiers_to_strbuilder(self->Specs) );
 	else
 		strbuilder_append_fmt( result, "%S", self->Name );
 
@@ -15525,9 +15890,9 @@ void typename_to_strbuilder_ref(CodeTypename self, StrBuilder* result )
 		strbuilder_append_str( result, txt("..."));
 }
 
-StrBuilder union_to_string(CodeUnion self)
+StrBuilder union_to_strbuilder(CodeUnion self)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 512 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 512 );
 	switch ( self->Type )
 	{
 		case CT_Union:
@@ -15548,20 +15913,20 @@ void union_to_strbuilder_def(CodeUnion self, StrBuilder* result )
 	strbuilder_append_str( result, txt("union ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	if ( self->Name.Len )
 	{
 		strbuilder_append_fmt( result, "%S\n{\n%SB\n}"
 			, self->Name
-			, body_to_string(self->Body)
+			, body_to_strbuilder(self->Body)
 		);
 	}
 	else
 	{
 		// Anonymous union
 		strbuilder_append_fmt( result, "\n{\n%SB\n}"
-			, body_to_string(self->Body)
+			, body_to_strbuilder(self->Body)
 		);
 	}
 
@@ -15579,7 +15944,7 @@ void union_to_strbuilder_fwd(CodeUnion self, StrBuilder* result )
 	strbuilder_append_str( result, txt("union ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	if ( self->Name.Len )
 	{
@@ -15590,10 +15955,10 @@ void union_to_strbuilder_fwd(CodeUnion self, StrBuilder* result )
 		strbuilder_append_str( result, txt(";\n"));
 }
 
-StrBuilder using_to_string(CodeUsing self)
+StrBuilder using_to_strbuilder(CodeUsing self)
 {
 	GEN_ASSERT(self);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 128 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 128 );
 	switch ( self->Type )
 	{
 		case CT_Using:
@@ -15614,20 +15979,20 @@ void using_to_strbuilder_ref(CodeUsing self, StrBuilder* result )
 		strbuilder_append_str( result, txt("export ") );
 
 	if ( self->Attributes )
-		strbuilder_append_fmt( result, "%SB ", attributes_to_string(self->Attributes) );
+		strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 	if ( self->UnderlyingType )
 	{
-		strbuilder_append_fmt( result, "using %S = %SB", self->Name, typename_to_string(self->UnderlyingType) );
+		strbuilder_append_fmt( result, "using %S = %SB", self->Name, typename_to_strbuilder(self->UnderlyingType) );
 
 		if ( self->UnderlyingType->ArrExpr )
 		{
-			strbuilder_append_fmt( result, "[ %SB ]", code_to_string(self->UnderlyingType->ArrExpr) );
+			strbuilder_append_fmt( result, "[ %SB ]", code_to_strbuilder(self->UnderlyingType->ArrExpr) );
 
 			Code next_arr_expr = self->UnderlyingType->ArrExpr->Next;
 			while ( next_arr_expr )
 			{
-				strbuilder_append_fmt( result, "[ %SB ]", code_to_string(next_arr_expr) );
+				strbuilder_append_fmt( result, "[ %SB ]", code_to_strbuilder(next_arr_expr) );
 				next_arr_expr = next_arr_expr->Next;
 			}
 		}
@@ -15655,10 +16020,10 @@ void using_to_strbuilder_ns(CodeUsing self, StrBuilder* result )
 }
 
 inline
-StrBuilder var_to_string(CodeVar self)
+StrBuilder var_to_strbuilder(CodeVar self)
 {
 	GEN_ASSERT(self);
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, 256 );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, 256 );
 	var_to_strbuilder_ref( self, & result );
 	return result;
 }
@@ -15673,18 +16038,18 @@ void var_to_strbuilder_ref(CodeVar self, StrBuilder* result )
 		// Its a comma-separated variable ( a NextVar )
 
 		if ( self->Specs )
-			strbuilder_append_fmt( result, "%SB ", specifiers_to_string(self->Specs) );
+			strbuilder_append_fmt( result, "%SB ", specifiers_to_strbuilder(self->Specs) );
 
 		strbuilder_append_str( result, self->Name );
 
 		if ( self->ValueType && self->ValueType->ArrExpr )
 		{
-			strbuilder_append_fmt( result, "[ %SB ]", code_to_string(self->ValueType->ArrExpr) );
+			strbuilder_append_fmt( result, "[ %SB ]", code_to_strbuilder(self->ValueType->ArrExpr) );
 
 			Code next_arr_expr = self->ValueType->ArrExpr->Next;
 			while ( next_arr_expr )
 			{
-				strbuilder_append_fmt( result, "[ %SB ]", code_to_string(next_arr_expr) );
+				strbuilder_append_fmt( result, "[ %SB ]", code_to_strbuilder(next_arr_expr) );
 				next_arr_expr = next_arr_expr->Next;
 			}
 		}
@@ -15692,14 +16057,14 @@ void var_to_strbuilder_ref(CodeVar self, StrBuilder* result )
 		if ( self->Value )
 		{
 			if ( self->VarParenthesizedInit )
-				strbuilder_append_fmt( result, "( %SB ", code_to_string(self->Value) );
+				strbuilder_append_fmt( result, "( %SB ", code_to_strbuilder(self->Value) );
 			else
-				strbuilder_append_fmt( result, " = %SB", code_to_string(self->Value) );
+				strbuilder_append_fmt( result, " = %SB", code_to_strbuilder(self->Value) );
 		}
 
 		// Keep the chain going...
 		if ( self->NextVar )
-			strbuilder_append_fmt( result, ", %SB", var_to_string(self->NextVar) );
+			strbuilder_append_fmt( result, ", %SB", var_to_strbuilder(self->NextVar) );
 
 		if ( self->VarParenthesizedInit )
 			strbuilder_append_str( result, txt(" )"));
@@ -15713,38 +16078,38 @@ void var_to_strbuilder_ref(CodeVar self, StrBuilder* result )
 	if ( self->Attributes || self->Specs )
 	{
 		if ( self->Attributes )
-			strbuilder_append_fmt( result, "%SB ", specifiers_to_string(self->Specs) );
+			strbuilder_append_fmt( result, "%SB ", attributes_to_strbuilder(self->Attributes) );
 
 		if ( self->Specs )
-			strbuilder_append_fmt( result, "%SB\n", specifiers_to_string(self->Specs) );
+			strbuilder_append_fmt( result, "%SB\n", specifiers_to_strbuilder(self->Specs) );
 
-		strbuilder_append_fmt( result, "%SB %S", typename_to_string(self->ValueType), self->Name );
+		strbuilder_append_fmt( result, "%SB %S", typename_to_strbuilder(self->ValueType), self->Name );
 
-		if ( self->ValueType->ArrExpr )
+		if ( self->ValueType && self->ValueType->ArrExpr )
 		{
-			strbuilder_append_fmt( result, "[ %SB ]", code_to_string(self->ValueType->ArrExpr) );
+			strbuilder_append_fmt( result, "[ %SB ]", code_to_strbuilder(self->ValueType->ArrExpr) );
 
 			Code next_arr_expr = self->ValueType->ArrExpr->Next;
 			while ( next_arr_expr )
 			{
-				strbuilder_append_fmt( result, "[ %SB ]", code_to_string(next_arr_expr) );
+				strbuilder_append_fmt( result, "[ %SB ]", code_to_strbuilder(next_arr_expr) );
 				next_arr_expr = next_arr_expr->Next;
 			}
 		}
 
 		if ( self->BitfieldSize )
-			strbuilder_append_fmt( result, " : %SB", code_to_string(self->BitfieldSize) );
+			strbuilder_append_fmt( result, " : %SB", code_to_strbuilder(self->BitfieldSize) );
 
 		if ( self->Value )
 		{
 			if ( self->VarParenthesizedInit )
-				strbuilder_append_fmt( result, "( %SB ", code_to_string(self->Value) );
+				strbuilder_append_fmt( result, "( %SB ", code_to_strbuilder(self->Value) );
 			else
-				strbuilder_append_fmt( result, " = %SB", code_to_string(self->Value) );
+				strbuilder_append_fmt( result, " = %SB", code_to_strbuilder(self->Value) );
 		}
 
 		if ( self->NextVar )
-			strbuilder_append_fmt( result, ", %SB", var_to_string(self->NextVar) );
+			strbuilder_append_fmt( result, ", %SB", var_to_strbuilder(self->NextVar) );
 
 		if ( self->VarParenthesizedInit )
 			strbuilder_append_str( result, txt(" )"));
@@ -15758,33 +16123,33 @@ void var_to_strbuilder_ref(CodeVar self, StrBuilder* result )
 	}
 
 	if ( self->BitfieldSize )
-		strbuilder_append_fmt( result, "%SB %S : %SB", typename_to_string(self->ValueType), self->Name, code_to_string(self->BitfieldSize) );
+		strbuilder_append_fmt( result, "%SB %S : %SB", typename_to_strbuilder(self->ValueType), self->Name, code_to_strbuilder(self->BitfieldSize) );
 
-	else if ( self->ValueType->ArrExpr )
+	else if ( self->ValueType && self->ValueType->ArrExpr )
 	{
-		strbuilder_append_fmt( result, "%SB %S[ %SB ]", typename_to_string(self->ValueType), self->Name, code_to_string(self->ValueType->ArrExpr) );
+		strbuilder_append_fmt( result, "%SB %S[ %SB ]", typename_to_strbuilder(self->ValueType), self->Name, code_to_strbuilder(self->ValueType->ArrExpr) );
 
 		Code next_arr_expr = self->ValueType->ArrExpr->Next;
 		while ( next_arr_expr )
 		{
-			strbuilder_append_fmt( result, "[ %SB ]", code_to_string(next_arr_expr) );
+			strbuilder_append_fmt( result, "[ %SB ]", code_to_strbuilder(next_arr_expr) );
 			next_arr_expr = next_arr_expr->Next;
 		}
 	}
 
 	else
-		strbuilder_append_fmt( result, "%SB %S", typename_to_string(self->ValueType), self->Name );
+		strbuilder_append_fmt( result, "%SB %S", typename_to_strbuilder(self->ValueType), self->Name );
 
 	if ( self->Value )
 	{
 		if ( self->VarParenthesizedInit )
-			strbuilder_append_fmt( result, "( %SB ", code_to_string(self->Value) );
+			strbuilder_append_fmt( result, "( %SB ", code_to_strbuilder(self->Value) );
 		else
-			strbuilder_append_fmt( result, " = %SB", code_to_string(self->Value) );
+			strbuilder_append_fmt( result, " = %SB", code_to_strbuilder(self->Value) );
 	}
 
 	if ( self->NextVar )
-		strbuilder_append_fmt( result, ", %SB", var_to_string( self->NextVar) );
+		strbuilder_append_fmt( result, ", %SB", var_to_strbuilder( self->NextVar) );
 
 	if ( self->VarParenthesizedInit )
 		strbuilder_append_str( result, txt(" )"));
@@ -15800,15 +16165,15 @@ void var_to_strbuilder_ref(CodeVar self, StrBuilder* result )
 
 #pragma region Interface
 
-GEN_NS_PARSER_BEGIN
 internal void parser_init();
 internal void parser_deinit();
-GEN_NS_PARSER_END
 
 internal
-void* Global_Allocator_Proc( void* allocator_data, AllocType type, ssize size, ssize alignment, void* old_memory, ssize old_size, u64 flags )
+void* fallback_allocator_proc( void* allocator_data, AllocType type, ssize size, ssize alignment, void* old_memory, ssize old_size, u64 flags )
 {
-	Arena* last = array_back(Global_AllocatorBuckets);
+	GEN_ASSERT(_ctx);
+	GEN_ASSERT(_ctx->Fallback_AllocatorBuckets);
+	Arena* last = array_back(_ctx->Fallback_AllocatorBuckets);
 
 	switch ( type )
 	{
@@ -15816,15 +16181,15 @@ void* Global_Allocator_Proc( void* allocator_data, AllocType type, ssize size, s
 		{
 			if ( ( last->TotalUsed + size ) > last->TotalSize )
 			{
-				Arena bucket = arena_init_from_allocator( heap(), Global_BucketSize );
+				Arena bucket = arena_init_from_allocator( heap(), _ctx->InitSize_Fallback_Allocator_Bucket_Size );
 
 				if ( bucket.PhysicalStart == nullptr )
-					GEN_FATAL( "Failed to create bucket for Global_AllocatorBuckets");
+					GEN_FATAL( "Failed to create bucket for Fallback_AllocatorBuckets");
 
-				if ( ! array_append( Global_AllocatorBuckets, bucket ) )
-					GEN_FATAL( "Failed to append bucket to Global_AllocatorBuckets");
+				if ( ! array_append( _ctx->Fallback_AllocatorBuckets, bucket ) )
+					GEN_FATAL( "Failed to append bucket to Fallback_AllocatorBuckets");
 
-				last = array_back(Global_AllocatorBuckets);
+				last = array_back(_ctx->Fallback_AllocatorBuckets);
 			}
 
 			return alloc_align( arena_allocator_info(last), size, alignment );
@@ -15843,15 +16208,15 @@ void* Global_Allocator_Proc( void* allocator_data, AllocType type, ssize size, s
 		{
 			if ( last->TotalUsed + size > last->TotalSize )
 			{
-				Arena bucket = arena_init_from_allocator( heap(), Global_BucketSize );
+				Arena bucket = arena_init_from_allocator( heap(), _ctx->InitSize_Fallback_Allocator_Bucket_Size );
 
 				if ( bucket.PhysicalStart == nullptr )
-					GEN_FATAL( "Failed to create bucket for Global_AllocatorBuckets");
+					GEN_FATAL( "Failed to create bucket for Fallback_AllocatorBuckets");
 
-				if ( ! array_append( Global_AllocatorBuckets, bucket ) )
-					GEN_FATAL( "Failed to append bucket to Global_AllocatorBuckets");
+				if ( ! array_append( _ctx->Fallback_AllocatorBuckets, bucket ) )
+					GEN_FATAL( "Failed to append bucket to Fallback_AllocatorBuckets");
 
-				last = array_back(Global_AllocatorBuckets);
+				last = array_back( _ctx->Fallback_AllocatorBuckets);
 			}
 
 			void* result = alloc_align( last->Backing, size, alignment );
@@ -15871,8 +16236,12 @@ void* Global_Allocator_Proc( void* allocator_data, AllocType type, ssize size, s
 internal
 void define_constants()
 {
+	// We only initalize these if there is no base context.
+	if ( context_counter > 0 )
+		return;
+
 	Code_Global          = make_code();
-	Code_Global->Name    = get_cached_string( txt("Global Code") );
+	Code_Global->Name    = cache_str( txt("Global Code") );
 	Code_Global->Content = Code_Global->Name;
 
 	Code_Invalid = make_code();
@@ -15880,22 +16249,22 @@ void define_constants()
 
 	t_empty       = (CodeTypename) make_code();
 	t_empty->Type = CT_Typename;
-	t_empty->Name = get_cached_string( txt("") );
+	t_empty->Name = cache_str( txt("") );
 	code_set_global(cast(Code, t_empty));
 
 	access_private       = make_code();
 	access_private->Type = CT_Access_Private;
-	access_private->Name = get_cached_string( txt("private:\n") );
+	access_private->Name = cache_str( txt("private:\n") );
 	code_set_global(cast(Code, access_private));
 
 	access_protected       = make_code();
 	access_protected->Type = CT_Access_Protected;
-	access_protected->Name = get_cached_string( txt("protected:\n") );
+	access_protected->Name = cache_str( txt("protected:\n") );
 	code_set_global(access_protected);
 
 	access_public       = make_code();
 	access_public->Type = CT_Access_Public;
-	access_public->Name = get_cached_string( txt("public:\n") );
+	access_public->Name = cache_str( txt("public:\n") );
 	code_set_global(access_public);
 
 	Str api_export_str = code(GEN_API_Export_Code);
@@ -15908,13 +16277,13 @@ void define_constants()
 
 	module_global_fragment          = make_code();
 	module_global_fragment->Type    = CT_Untyped;
-	module_global_fragment->Name    = get_cached_string( txt("module;") );
+	module_global_fragment->Name    = cache_str( txt("module;") );
 	module_global_fragment->Content = module_global_fragment->Name;
 	code_set_global(cast(Code, module_global_fragment));
 
 	module_private_fragment          = make_code();
 	module_private_fragment->Type    = CT_Untyped;
-	module_private_fragment->Name    = get_cached_string( txt("module : private;") );
+	module_private_fragment->Name    = cache_str( txt("module : private;") );
 	module_private_fragment->Content = module_private_fragment->Name;
 	code_set_global(cast(Code, module_private_fragment));
 
@@ -15924,13 +16293,13 @@ void define_constants()
 
 	pragma_once          = (CodePragma) make_code();
 	pragma_once->Type    = CT_Preprocess_Pragma;
-	pragma_once->Name    = get_cached_string( txt("once") );
+	pragma_once->Name    = cache_str( txt("once") );
 	pragma_once->Content = pragma_once->Name;
 	code_set_global((Code)pragma_once);
 
 	param_varadic            = (CodeParams) make_code();
 	param_varadic->Type      = CT_Parameters;
-	param_varadic->Name      = get_cached_string( txt("...") );
+	param_varadic->Name      = cache_str( txt("...") );
 	param_varadic->ValueType = t_empty;
 	code_set_global((Code)param_varadic);
 
@@ -16002,251 +16371,266 @@ void define_constants()
 	if (enum_underlying_sig.Len == 0) {
 		enum_underlying_sig = txt("enum_underlying(");
 	}
-	array_append(PreprocessorDefines, enum_underlying_sig);
-
-#	undef def_constant_spec
+	array_append( _ctx->PreprocessorDefines, enum_underlying_sig);
 }
 
-void init()
+void init(Context* ctx)
 {
-	// Setup global allocator
+	do_once() {
+		context_counter = 0;
+	}
+	AllocatorInfo fallback_allocator = { & fallback_allocator_proc, nullptr };
+	
+	b32 using_fallback_allocator = false;
+	if (ctx->Allocator_DyanmicContainers.Proc == nullptr) {
+		ctx->Allocator_DyanmicContainers = fallback_allocator;
+		using_fallback_allocator = true;
+	}
+	if (ctx->Allocator_Pool.Proc == nullptr ) {
+		ctx->Allocator_Pool = fallback_allocator;
+		using_fallback_allocator = true;
+	}
+	if (ctx->Allocator_StrCache.Proc == nullptr) {
+		ctx->Allocator_StrCache = fallback_allocator;
+		using_fallback_allocator = true;
+	}
+	if (ctx->Allocator_Temp.Proc == nullptr) {
+		ctx->Allocator_Temp = fallback_allocator;
+		using_fallback_allocator = true;
+	}
+	// Setup fallback allocator
+	if (using_fallback_allocator)
 	{
-		AllocatorInfo becasue_C = { & Global_Allocator_Proc, nullptr };
-		GlobalAllocator = becasue_C;
+		ctx->Fallback_AllocatorBuckets = array_init_reserve(Arena, heap(), 128 );
+		if ( ctx->Fallback_AllocatorBuckets == nullptr )
+			GEN_FATAL( "Failed to reserve memory for Fallback_AllocatorBuckets");
 
-		Global_AllocatorBuckets = array_init_reserve(Arena, heap(), 128 );
-
-		if ( Global_AllocatorBuckets == nullptr )
-			GEN_FATAL( "Failed to reserve memory for Global_AllocatorBuckets");
-
-		Arena bucket = arena_init_from_allocator( heap(), Global_BucketSize );
-
+		Arena bucket = arena_init_from_allocator( heap(), ctx->InitSize_Fallback_Allocator_Bucket_Size );
 		if ( bucket.PhysicalStart == nullptr )
-			GEN_FATAL( "Failed to create first bucket for Global_AllocatorBuckets");
+			GEN_FATAL( "Failed to create first bucket for Fallback_AllocatorBuckets");
 
-		array_append( Global_AllocatorBuckets, bucket );
+		array_append( ctx->Fallback_AllocatorBuckets, bucket );
 	}
 
-	if (Allocator_DataArrays.Proc == nullptr) {
-		Allocator_DataArrays = GlobalAllocator;
+	if (ctx->Max_CommentLineLength == 0) {
+		ctx->Max_CommentLineLength = 1024;
 	}
-	if (Allocator_CodePool.Proc == nullptr ) {
-		Allocator_CodePool = GlobalAllocator;
+	if (ctx->Max_StrCacheLength == 0) {
+		ctx->Max_StrCacheLength = kilobytes(512);
 	}
-	if (Allocator_Lexer.Proc == nullptr) {
-		Allocator_Lexer = GlobalAllocator;
+
+	if (ctx->InitSize_BuilderBuffer == 0) {
+		ctx->InitSize_BuilderBuffer = megabytes(2);
 	}
-	if (Allocator_StringArena.Proc == nullptr) {
-		Allocator_StringArena = GlobalAllocator;
+	if (ctx->InitSize_CodePoolsArray == 0) { 
+		ctx->InitSize_CodePoolsArray = 16; 
 	}
-	if (Allocator_StringTable.Proc == nullptr) {
-		Allocator_StringTable = GlobalAllocator;
+	if (ctx->InitSize_StringArenasArray == 0) {
+		ctx->InitSize_StringArenasArray = 16; 
 	}
-	if (Allocator_TypeTable.Proc == nullptr) {
-		Allocator_TypeTable = GlobalAllocator;
+	if (ctx->CodePool_NumBlocks == 0) {
+		ctx->CodePool_NumBlocks = kilobytes(16);
 	}
+
+	if (ctx->InitSize_LexArena == 0 ) {
+		ctx->InitSize_LexArena = megabytes(4);
+	}
+	if (ctx->SizePer_StringArena == 0) {
+		ctx->SizePer_StringArena = megabytes(1);
+	}
+
+	if (ctx->InitSize_Fallback_Allocator_Bucket_Size == 0) { 
+		ctx->InitSize_Fallback_Allocator_Bucket_Size = megabytes(8);
+	}
+
+	// Override the current context (user has to put it back if unwanted).
+	_ctx = ctx;
 
 	// Setup the arrays
 	{
-		CodePools = array_init_reserve(Pool, Allocator_DataArrays, InitSize_DataArrays );
-
-		if ( CodePools == nullptr )
+		ctx->CodePools = array_init_reserve(Pool, ctx->Allocator_DyanmicContainers, ctx->InitSize_CodePoolsArray );
+		if ( ctx->CodePools == nullptr )
 			GEN_FATAL( "gen::init: Failed to initialize the CodePools array" );
 
-		StringArenas = array_init_reserve(Arena, Allocator_DataArrays, InitSize_DataArrays );
-
-		if ( StringArenas == nullptr )
+		ctx->StringArenas = array_init_reserve(Arena, ctx->Allocator_DyanmicContainers, ctx->InitSize_StringArenasArray );
+		if ( ctx->StringArenas == nullptr )
 			GEN_FATAL( "gen::init: Failed to initialize the StringArenas array" );
 	}
-
 	// Setup the code pool and code entries arena.
 	{
-		Pool code_pool = pool_init( Allocator_CodePool, CodePool_NumBlocks, sizeof(AST) );
-
+		Pool code_pool = pool_init( ctx->Allocator_Pool, ctx->CodePool_NumBlocks, sizeof(AST) );
 		if ( code_pool.PhysicalStart == nullptr )
 			GEN_FATAL( "gen::init: Failed to initialize the code pool" );
+		array_append( ctx->CodePools, code_pool );
 
-		array_append( CodePools, code_pool );
+		// TODO(Ed): This is going to be phased out most likely.
+		ctx->LexArena = arena_init_from_allocator( ctx->Allocator_DyanmicContainers, ctx->InitSize_LexArena );
 
-		LexArena = arena_init_from_allocator( Allocator_Lexer, LexAllocator_Size );
-
-		Arena strbuilder_arena = arena_init_from_allocator( Allocator_StringArena, SizePer_StringArena );
-
+		// TODO(Ed): Eventually the string arenas needs to be phased out for a dedicated string slab allocator
+		Arena strbuilder_arena = arena_init_from_allocator( ctx->Allocator_StrCache, ctx->SizePer_StringArena );
 		if ( strbuilder_arena.PhysicalStart == nullptr )
 			GEN_FATAL( "gen::init: Failed to initialize the string arena" );
-
-		array_append( StringArenas, strbuilder_arena );
+		array_append( ctx->StringArenas, strbuilder_arena );
 	}
-
 	// Setup the hash tables
 	{
-		StringCache = hashtable_init(StringCached, Allocator_StringTable);
-
-		if ( StringCache.Entries == nullptr )
+		ctx->StrCache = hashtable_init(StrCached, ctx->Allocator_DyanmicContainers);
+		if ( ctx->StrCache.Entries == nullptr )
 			GEN_FATAL( "gen::init: Failed to initialize the StringCache");
 	}
-
 	// Preprocessor Defines
-	PreprocessorDefines = array_init_reserve(StringCached, GlobalAllocator, kilobytes(1) );
+	ctx->PreprocessorDefines = array_init_reserve(StrCached, ctx->Allocator_DyanmicContainers, kilobytes(1) );
 
 	define_constants();
-	GEN_NS_PARSER parser_init();
+	parser_init();
+
+	++ context_counter;
 }
 
-void deinit()
+void deinit(Context* ctx)
 {
+	GEN_ASSERT(context_counter);
+	GEN_ASSERT_MSG(context_counter > 0, "Attempted to deinit a context that for some reason wan't accounted for!");
 	usize index = 0;
-	usize left  = array_num(CodePools);
+	usize left  = array_num(ctx->CodePools);
 	do
 	{
-		Pool* code_pool = & CodePools[index];
+		Pool* code_pool = & ctx->CodePools[index];
 		pool_free(code_pool);
 		index++;
 	}
 	while ( left--, left );
 
 	index = 0;
-	left  = array_num(StringArenas);
+	left  = array_num(ctx->StringArenas);
 	do
 	{
-		Arena* strbuilder_arena = & StringArenas[index];
+		Arena* strbuilder_arena = & ctx->StringArenas[index];
 		arena_free(strbuilder_arena);
 		index++;
 	}
 	while ( left--, left );
 
-	hashtable_destroy(StringCache);
+	hashtable_destroy(ctx->StrCache);
 
-	array_free( CodePools);
-	array_free( StringArenas);
+	array_free( ctx->CodePools);
+	array_free( ctx->StringArenas);
 
-	arena_free(& LexArena);
+	arena_free(& ctx->LexArena);
 
-	array_free(PreprocessorDefines);
+	array_free(ctx->PreprocessorDefines);
 
-	index = 0;
-	left  = array_num(Global_AllocatorBuckets);
-	do
+	left  = array_num( ctx->Fallback_AllocatorBuckets);
+	if (left)
 	{
-		Arena* bucket = & Global_AllocatorBuckets[ index ];
-		arena_free(bucket);
-		index++;
+		index = 0;
+		do
+		{
+			Arena* bucket = & ctx->Fallback_AllocatorBuckets[ index ];
+			arena_free(bucket);
+			index++;
+		}
+		while ( left--, left );
+		array_free( ctx->Fallback_AllocatorBuckets);
 	}
-	while ( left--, left );
+	parser_deinit();
 
-	array_free(Global_AllocatorBuckets);
-	GEN_NS_PARSER parser_deinit();
+	if (_ctx == ctx) 
+		_ctx = nullptr;
+	-- context_counter;
 }
 
-void reset()
+void reset(Context* ctx)
 {
 	s32 index = 0;
-	s32 left  = array_num(CodePools);
+	s32 left  = array_num(ctx->CodePools);
 	do
 	{
-		Pool* code_pool = & CodePools[index];
+		Pool* code_pool = & ctx->CodePools[index];
 		pool_clear(code_pool);
 		index++;
 	}
 	while ( left--, left );
 
 	index = 0;
-	left  = array_num(StringArenas);
+	left  = array_num(ctx->StringArenas);
 	do
 	{
-		Arena* strbuilder_arena = & StringArenas[index];
+		Arena* strbuilder_arena = & ctx->StringArenas[index];
 		strbuilder_arena->TotalUsed = 0;;
 		index++;
 	}
 	while ( left--, left );
 
-	hashtable_clear(StringCache);
-
+	hashtable_clear(ctx->StrCache);
 	define_constants();
 }
 
-AllocatorInfo get_strbuilder_allocator( s32 c_str_length )
+void set_context(Context* new_ctx) {
+	GEN_ASSERT(new_ctx);
+	_ctx = new_ctx;
+}
+
+AllocatorInfo get_cached_str_allocator( s32 str_length )
 {
-	Arena* last = array_back(StringArenas);
-
-	usize size_req = c_str_length + sizeof(StrBuilderHeader) + sizeof(char*);
-
+	Arena* last     = array_back(_ctx->StringArenas);
+	usize  size_req = str_length + sizeof(StrBuilderHeader) + sizeof(char*);
 	if ( last->TotalUsed + scast(ssize, size_req) > last->TotalSize )
 	{
-		Arena new_arena = arena_init_from_allocator( Allocator_StringArena, SizePer_StringArena );
+		Arena new_arena = arena_init_from_allocator( _ctx->Allocator_StrCache, _ctx->SizePer_StringArena );
+		if ( ! array_append( _ctx->StringArenas, new_arena ) )
+			GEN_FATAL( "gen::get_cached_str_allocator: Failed to allocate a new string arena" );
 
-		if ( ! array_append( StringArenas, new_arena ) )
-			GEN_FATAL( "gen::get_strbuilder_allocator: Failed to allocate a new string arena" );
-
-		last = array_back(StringArenas);
+		last = array_back( _ctx->StringArenas);
 	}
-
 	return arena_allocator_info(last);
 }
 
 // Will either make or retrive a code string.
-StringCached get_cached_string( Str str )
+StrCached cache_str( Str str )
 {
-	s32 hash_length = str.Len > kilobytes(1) ? kilobytes(1) : str.Len;
-	u64 key         = crc32( str.Ptr, hash_length );
-	{
-		StringCached* result = hashtable_get(StringCache, key );
-
+	if (str.Len > _ctx->Max_StrCacheLength) {
+		// Do not cache the string, just shove into the arena and and return it.
+		Str result = strbuilder_to_str( strbuilder_make_str( get_cached_str_allocator( str.Len ), str ));
+		return result;
+	}
+	u64 key = crc32( str.Ptr, str.Len ); {
+		StrCached* result = hashtable_get( _ctx->StrCache, key );
 		if ( result )
 			return * result;
 	}
-
-	Str result = strbuilder_to_str( strbuilder_make_str( get_strbuilder_allocator( str.Len ), str ));
-	hashtable_set(StringCache, key, result );
-
+	Str result = strbuilder_to_str( strbuilder_make_str( get_cached_str_allocator( str.Len ), str ));
+	hashtable_set( _ctx->StrCache, key, result );
 	return result;
 }
 
 // Used internally to retireve a Code object form the CodePool.
 Code make_code()
 {
-	Pool* allocator = array_back( CodePools);
+	Pool* allocator = array_back( _ctx->CodePools);
 	if ( allocator->FreeList == nullptr )
 	{
-		Pool code_pool = pool_init( Allocator_CodePool, CodePool_NumBlocks, sizeof(AST) );
+		Pool code_pool = pool_init( _ctx->Allocator_Pool, _ctx->CodePool_NumBlocks, sizeof(AST) );
 
 		if ( code_pool.PhysicalStart == nullptr )
 			GEN_FATAL( "gen::make_code: Failed to allocate a new code pool - CodePool allcoator returned nullptr." );
 
-		if ( ! array_append( CodePools, code_pool ) )
+		if ( ! array_append( _ctx->CodePools, code_pool ) )
 			GEN_FATAL( "gen::make_code: Failed to allocate a new code pool - CodePools failed to append new pool." );
 
-		allocator = array_back( CodePools);
+		allocator = array_back( _ctx->CodePools);
 	}
-
 	Code result = { rcast( AST*, alloc( pool_allocator_info(allocator), sizeof(AST) )) };
 	mem_set( rcast(void*, cast(AST*, result)), 0, sizeof(AST) );
 	return result;
 }
 
-void set_allocator_data_arrays( AllocatorInfo allocator )
-{
-	Allocator_DataArrays = allocator;
-}
-
-void set_allocator_code_pool( AllocatorInfo allocator )
-{
-	Allocator_CodePool = allocator;
-}
-
-void set_allocator_lexer( AllocatorInfo allocator )
-{
-	Allocator_Lexer = allocator;
-}
-
-void set_allocator_strbuilder_arena( AllocatorInfo allocator )
-{
-	Allocator_StringArena = allocator;
-}
-
-void set_allocator_strbuilder_table( AllocatorInfo allocator )
-{
-	Allocator_StringArena = allocator;
+void set_preprocess_define( Str id, b32 is_functional ) {
+	StrBuilder builder = strbuilder_make_str( _ctx->Allocator_Temp, id );
+	if (is_functional) {
+		strbuilder_append_char( & builder, '(' );
+	}
+	array_append( _ctx->PreprocessorDefines, cache_str( strbuilder_to_str(builder)) ); 
 }
 
 #pragma region Upfront
@@ -16665,7 +17049,7 @@ CodeAttributes def_attributes( Str content )
 	Code
 	result          = make_code();
 	result->Type    = CT_PlatformAttributes;
-	result->Name    = get_cached_string( content );
+	result->Name    = cache_str( content );
 	result->Content = result->Name;
 	return (CodeAttributes) result;
 }
@@ -16679,9 +17063,7 @@ CodeComment def_comment( Str content )
 		return InvalidCode;
 	}
 
-	static char line[ MaxCommentLineLength ];
-
-	StrBuilder      cmt_formatted = strbuilder_make_reserve( GlobalAllocator, kilobytes(1) );
+	StrBuilder  cmt_formatted = strbuilder_make_reserve( _ctx->Allocator_Temp, kilobytes(1) );
 	char const* end           = content.Ptr + content.Len;
 	char const* scanner       = content.Ptr;
 	s32         curr          = 0;
@@ -16696,10 +17078,7 @@ CodeComment def_comment( Str content )
 		}
 		length++;
 
-		c_str_copy( line, scanner, length );
-		strbuilder_append_fmt(& cmt_formatted, "//%.*s", length, line );
-		mem_set( line, 0, MaxCommentLineLength );
-
+		strbuilder_append_fmt(& cmt_formatted, "//%.*s", length, scanner );
 		scanner += length;
 	}
 	while ( scanner <= end );
@@ -16707,12 +17086,12 @@ CodeComment def_comment( Str content )
 	if ( * strbuilder_back(cmt_formatted) != '\n' )
 		strbuilder_append_str( & cmt_formatted, txt("\n") );
 
-	Str name = { strbuilder_length(cmt_formatted), cmt_formatted };
+	Str name = strbuilder_to_str(cmt_formatted);
 
 	Code
 	result          = make_code();
 	result->Type    = CT_Comment;
-	result->Name    = get_cached_string( name );
+	result->Name    = cache_str( name );
 	result->Content = result->Name;
 
 	strbuilder_free(& cmt_formatted);
@@ -16777,7 +17156,7 @@ CodeClass def_class( Str name, Opts_def_struct p )
 
 	CodeClass
 	result              = (CodeClass) make_code();
-	result->Name        = get_cached_string( name );
+	result->Name        = cache_str( name );
 	result->ModuleFlags = p.mflags;
 	if ( p.body )
 	{
@@ -16820,12 +17199,12 @@ CodeDefine def_define( Str name, Str content, Opts_def_define p )
 	CodeDefine
 	result          = (CodeDefine) make_code();
 	result->Type    = CT_Preprocess_Define;
-	result->Name    = get_cached_string( name );
+	result->Name    = cache_str( name );
 
 	if ( content.Len <= 0 || content.Ptr == nullptr )
-		result->Content = get_cached_string( txt("") );
+		result->Content = cache_str( txt("") );
 	else
-		result->Content = get_cached_string( strbuilder_to_str(strbuilder_fmt_buf(GlobalAllocator, "%S\n", content)) );
+		result->Content = cache_str( strbuilder_to_str(strbuilder_fmt_buf(_ctx->Allocator_Temp, "%S\n", content)) );
 
 	b32  append_preprocess_defines = ! p.dont_append_preprocess_defines;
 	if ( append_preprocess_defines ) {
@@ -16835,8 +17214,8 @@ CodeDefine def_define( Str name, Str content, Opts_def_define p )
 			if ( result->Name.Ptr[lex_id_len] == '(' )
 				break;
 		}
-		Str lex_id = { lex_id_len, result->Name.Ptr };
-		array_append(PreprocessorDefines, lex_id );
+		Str lex_id = { result->Name.Ptr,  lex_id_len };
+		array_append(_ctx->PreprocessorDefines, cache_str(lex_id) );
 	}
 	return result;
 }
@@ -16894,7 +17273,7 @@ CodeEnum def_enum( Str name, Opts_def_enum p )
 
 	CodeEnum
 	result              = (CodeEnum) make_code();
-	result->Name        = get_cached_string( name );
+	result->Name        = cache_str( name );
 	result->ModuleFlags = p.mflags;
 	if ( p.body )
 	{
@@ -16946,7 +17325,7 @@ CodeExec def_execution( Str content )
 	CodeExec
 	result          = (CodeExec) make_code();
 	result->Type    = CT_Execution;
-	result->Content = get_cached_string( content );
+	result->Content = cache_str( content );
 	return result;
 }
 
@@ -16964,7 +17343,7 @@ CodeExtern def_extern_link( Str name, CodeBody body )
 	CodeExtern
 	result        = (CodeExtern)make_code();
 	result->Type  = CT_Extern_Linkage;
-	result->Name  = get_cached_string( name );
+	result->Name  = cache_str( name );
 	result->Body  = body;
 	return result;
 }
@@ -17027,7 +17406,7 @@ CodeFn def_function( Str name, Opts_def_function p )
 
 	CodeFn
 	result              = (CodeFn) make_code();
-	result->Name        = get_cached_string( name );
+	result->Name        = cache_str( name );
 	result->ModuleFlags = p.mflags;
 	if ( p.body )
 	{
@@ -17066,13 +17445,13 @@ CodeInclude def_include( Str path, Opts_def_include p )
 		return InvalidCode;
 	}
 	StrBuilder content = p.foreign ?
-			strbuilder_fmt_buf( GlobalAllocator, "<%.*s>",   path.Len, path.Ptr )
-		:	strbuilder_fmt_buf( GlobalAllocator, "\"%.*s\"", path.Len, path.Ptr );
+			strbuilder_fmt_buf( _ctx->Allocator_Temp, "<%.*s>",   path.Len, path.Ptr )
+		:	strbuilder_fmt_buf( _ctx->Allocator_Temp, "\"%.*s\"", path.Len, path.Ptr );
 
 	CodeInclude
 	result          = (CodeInclude) make_code();
 	result->Type    = CT_Preprocess_Include;
-	result->Name    = get_cached_string( strbuilder_to_str(content) );
+	result->Name    = cache_str( strbuilder_to_str(content) );
 	result->Content = result->Name;
 	return result;
 }
@@ -17086,7 +17465,7 @@ CodeModule def_module( Str name, Opts_def_module p )
 	CodeModule
 	result              = (CodeModule) make_code();
 	result->Type        = CT_Module;
-	result->Name        = get_cached_string( name );
+	result->Name        = cache_str( name );
 	result->ModuleFlags = p.mflags;
 	return result;
 }
@@ -17109,7 +17488,7 @@ CodeNS def_namespace( Str name, CodeBody body, Opts_def_namespace p )
 	CodeNS
 	result              = (CodeNS) make_code();
 	result->Type        = CT_Namespace;
-	result->Name        = get_cached_string( name );
+	result->Name        = cache_str( name );
 	result->ModuleFlags = p.mflags;
 	result->Body        = body;
 	return result;
@@ -17141,11 +17520,11 @@ CodeOperator def_operator( Operator op, Str nspace, Opts_def_operator p )
 	else
 		name = c_str_fmt_buf( "operator %.*s", op_str.Len, op_str.Ptr );
 
-	Str name_resolved = { c_str_len(name), name };
+	Str name_resolved = { name, c_str_len(name) };
 
 	CodeOperator
 	result              = (CodeOperator) make_code();
-	result->Name        = get_cached_string( name_resolved );
+	result->Name        = cache_str( name_resolved );
 	result->ModuleFlags = p.mflags;
 	result->Op          = op;
 	if ( p.body )
@@ -17232,7 +17611,7 @@ CodeParams def_param( CodeTypename type, Str name, Opts_def_param p )
 	CodeParams
 	result            = (CodeParams) make_code();
 	result->Type      = CT_Parameters;
-	result->Name      = get_cached_string( name );
+	result->Name      = cache_str( name );
 	result->ValueType = type;
 	result->Value     = p.value;
 	result->NumEntries++;
@@ -17249,7 +17628,7 @@ CodePragma def_pragma( Str directive )
 	CodePragma
 	result          = (CodePragma) make_code();
 	result->Type    = CT_Preprocess_Pragma;
-	result->Content = get_cached_string( directive );
+	result->Content = cache_str( directive );
 	return result;
 }
 
@@ -17262,7 +17641,7 @@ CodePreprocessCond def_preprocess_cond( EPreprocessCond type, Str expr )
 	}
 	CodePreprocessCond
 	result          = (CodePreprocessCond) make_code();
-	result->Content = get_cached_string( expr );
+	result->Content = cache_str( expr );
 	switch (type)
 	{
 		case PreprocessCond_If:
@@ -17312,7 +17691,7 @@ CodeStruct def_struct( Str name, Opts_def_struct p )
 	result              = (CodeStruct) make_code();
 	result->ModuleFlags = p.mflags;
 	if ( name.Len )
-		result->Name = get_cached_string( name );
+		result->Name = cache_str( name );
 
 	if ( p.body ) {
 		result->Type = CT_Struct;
@@ -17389,7 +17768,7 @@ CodeTypename def_type( Str name, Opts_def_type p )
 	}
 	CodeTypename
 	result             = (CodeTypename) make_code();
-	result->Name       = get_cached_string( name );
+	result->Name       = cache_str( name );
 	result->Type       = CT_Typename;
 	result->Attributes = p.attributes;
 	result->Specs      = p.specifiers;
@@ -17450,12 +17829,12 @@ CodeTypedef def_typedef( Str name, Code type, Opts_def_typedef p )
 			GEN_DEBUG_TRAP();
 			return InvalidCode;
 		}
-		result->Name       = get_cached_string( type->Name );
+		result->Name       = cache_str( type->Name );
 		result->IsFunction = true;
 	}
 	else
 	{
-		result->Name       = get_cached_string( name );
+		result->Name       = cache_str( name );
 		result->IsFunction = false;
 	}
 	return result;
@@ -17484,7 +17863,7 @@ CodeUnion def_union( Str name, CodeBody body, Opts_def_union p )
 	result->Body        = body;
 	result->Attributes  = p.attributes;
 	if ( name.Ptr )
-		result->Name = get_cached_string( name );
+		result->Name = cache_str( name );
 	return result;
 }
 
@@ -17508,7 +17887,7 @@ CodeUsing def_using( Str name, CodeTypename type, Opts_def_using p )
 	}
 	CodeUsing
 	result                 = (CodeUsing) make_code();
-	result->Name           = get_cached_string( name );
+	result->Name           = cache_str( name );
 	result->ModuleFlags    = p.mflags;
 	result->Type           = CT_Using;
 	result->UnderlyingType = type;
@@ -17524,7 +17903,7 @@ CodeUsing def_using_namespace( Str name )
 	}
 	CodeUsing
 	result          = (CodeUsing) make_code();
-	result->Name    = get_cached_string( name );
+	result->Name    = cache_str( name );
 	result->Type    = CT_Using_Namespace;
 	return result;
 }
@@ -17557,7 +17936,7 @@ CodeVar def_variable( CodeTypename type, Str name, Opts_def_variable p )
 	}
 	CodeVar
 	result              = (CodeVar) make_code();
-	result->Name        = get_cached_string( name );
+	result->Name        = cache_str( name );
 	result->Type        = CT_Variable;
 	result->ModuleFlags = p.mflags;
 	result->ValueType   = type;
@@ -17603,15 +17982,12 @@ CodeBody def_class_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::"
 						"def_class_body"
 						": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_CLASS_UNALLOWED_TYPES:
@@ -17621,7 +17997,6 @@ CodeBody def_class_body( s32 num, ... )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -17637,18 +18012,14 @@ CodeBody def_class_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Function_Body;
-
 	do
 	{
 		Code entry = *codes;
 		codes++;
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_class_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_CLASS_UNALLOWED_TYPES:
@@ -17658,7 +18029,6 @@ CodeBody def_class_body( s32 num, Code* codes )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -17680,19 +18050,14 @@ CodeBody def_enum_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if ( ! entry )
-		{
+		if ( ! entry ) {
 			log_failure("gen::def_enum_body: Provided a null entry");
 			return InvalidCode;
 		}
-
-		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment )
-		{
+		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment ) {
 			log_failure("gen::def_enum_body: Entry type is not allowed - %s. Must be of untyped or comment type.", code_debug_str(entry) );
 			return InvalidCode;
 		}
-
 		body_append(result, entry );
 	}
 	while ( num--, num > 0 );
@@ -17708,23 +18073,17 @@ CodeBody def_enum_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Enum_Body;
-
 	do
 	{
 		Code entry = *codes;
-
-		if ( ! entry )
-		{
+		if ( ! entry ) {
 			log_failure("gen::def_enum_body: Provided a null entry");
 			return InvalidCode;
 		}
-
-		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment )
-		{
+		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment ) {
 			log_failure("gen::def_enum_body: Entry type is not allowed: %s", code_debug_str(entry) );
 			return InvalidCode;
 		}
-
 		body_append(result, entry );
 	}
 	while ( codes++, num--, num > 0 );
@@ -17746,13 +18105,11 @@ CodeBody def_export_body( s32 num, ... )
 	{
 		Code_POD pod = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if (!entry)
+		if ( ! entry)
 		{
 			log_failure("gen::" "def_export_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_EXPORT_UNALLOWED_TYPES:
@@ -17762,7 +18119,6 @@ CodeBody def_export_body( s32 num, ... )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -17778,18 +18134,14 @@ CodeBody def_export_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Export_Body;
-
 	do
 	{
 		Code entry = *codes;
 		codes++;
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_export_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_EXPORT_UNALLOWED_TYPES:
@@ -17799,7 +18151,6 @@ CodeBody def_export_body( s32 num, Code* codes )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -17821,13 +18172,10 @@ CodeBody def_extern_link_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_extern_linkage_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_EXTERN_LINKAGE_UNALLOWED_TYPES:
@@ -17837,7 +18185,6 @@ CodeBody def_extern_link_body( s32 num, ... )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -17853,18 +18200,15 @@ CodeBody def_extern_link_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Extern_Linkage_Body;
-
 	do
 	{
 		Code entry = *codes;
 		codes++;
-
 		if (!entry)
 		{
 			log_failure("gen::" "def_extern_linkage_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_EXTERN_LINKAGE_UNALLOWED_TYPES:
@@ -17874,7 +18218,6 @@ CodeBody def_extern_link_body( s32 num, Code* codes )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -17896,16 +18239,12 @@ CodeBody def_function_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" stringize(def_function_body) ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
-
 			GEN_AST_BODY_FUNCTION_UNALLOWED_TYPES:
 				log_failure("gen::" stringize(def_function_body) ": Entry type is not allowed: %s", code_debug_str(entry));
 				return InvalidCode;
@@ -17913,7 +18252,6 @@ CodeBody def_function_body( s32 num, ... )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -17929,18 +18267,14 @@ CodeBody def_function_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Function_Body;
-
 	do
 	{
 		Code entry = *codes;
 		codes++;
-
-		if (!entry)
-		{
+		if (!entry) {
 			log_failure("gen::" "def_function_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_FUNCTION_UNALLOWED_TYPES:
@@ -17971,13 +18305,10 @@ CodeBody def_global_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_global_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			case CT_Global_Body:
@@ -17992,7 +18323,6 @@ CodeBody def_global_body( s32 num, ... )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -18008,18 +18338,14 @@ CodeBody def_global_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Global_Body;
-
 	do
 	{
 		Code entry = *codes;
 		codes++;
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_global_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			case CT_Global_Body:
@@ -18055,13 +18381,10 @@ CodeBody def_namespace_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_namespace_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_NAMESPACE_UNALLOWED_TYPES:
@@ -18071,7 +18394,6 @@ CodeBody def_namespace_body( s32 num, ... )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -18087,18 +18409,14 @@ CodeBody def_namespace_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Global_Body;
-
 	do
 	{
 		Code entry = *codes;
 		codes++;
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_namespace_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_NAMESPACE_UNALLOWED_TYPES:
@@ -18107,7 +18425,6 @@ CodeBody def_namespace_body( s32 num, Code* codes )
 
 			default: break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -18126,26 +18443,20 @@ CodeParams def_params( s32 num, ... )
 	CodeParams param = pcast( CodeParams, pod );
 
 	null_check( def_params, param );
-
-	if ( param->Type != CT_Parameters )
-	{
+	if ( param->Type != CT_Parameters ) {
 		log_failure( "gen::def_params: param %d is not a Parameters", num - num + 1 );
 		return InvalidCode;
 	}
 
 	CodeParams result = (CodeParams) code_duplicate(param);
-
 	while ( -- num )
 	{
 		pod   = va_arg(va, Code_POD);
 		param = pcast( CodeParams, pod );
-
-		if ( param->Type != CT_Parameters )
-		{
+		if ( param->Type != CT_Parameters ) {
 			log_failure( "gen::def_params: param %d is not a Parameters", num - num + 1 );
 			return InvalidCode;
 		}
-
 		params_append(result, param );
 	}
 	va_end(va);
@@ -18158,18 +18469,14 @@ CodeParams def_params( s32 num, CodeParams* codes )
 	def_body_code_array_start( def_params );
 
 #	define check_current(current)                                                                                      \
-	if ( current == nullptr )                                                                                          \
-	{                                                                                                                  \
+	if ( current == nullptr ) {                                                                                        \
 		log_failure("gen::def_params: Provide a null code in codes array");                                            \
 		return InvalidCode;                                                                                            \
 	}                                                                                                                  \
-																												       \
-	if (current->Type != CT_Parameters )                                                                               \
-	{                                                                                                                  \
+	if (current->Type != CT_Parameters ) {                                                                             \
 		log_failure("gen::def_params: Code in coes array is not of paramter type - %s", code_debug_str(current) );     \
 		return InvalidCode;                                                                                            \
 	}
-
 	CodeParams current = (CodeParams)code_duplicate(* codes);
 	check_current(current);
 
@@ -18178,9 +18485,7 @@ CodeParams def_params( s32 num, CodeParams* codes )
 	result->Name      = current->Name;
 	result->Type      = current->Type;
 	result->ValueType = current->ValueType;
-
-	while( codes++, current = * codes, num--, num > 0 )
-	{
+	while( codes++, current = * codes, num--, num > 0 ) {
 		check_current(current);
 		params_append(result, current );
 	}
@@ -18191,28 +18496,22 @@ CodeParams def_params( s32 num, CodeParams* codes )
 
 CodeSpecifiers def_specifiers( s32 num, ... )
 {
-	if ( num <= 0 )
-	{
+	if ( num <= 0 ) {
 		log_failure("gen::def_specifiers: num cannot be zero or less");
 		return InvalidCode;
 	}
-
-	if ( num > AST_ArrSpecs_Cap )
-	{
+	if ( num > AST_ArrSpecs_Cap ) {
 		log_failure("gen::def_specifiers: num of speciifers to define AST larger than AST specicifier capacity - %d", num);
 		return InvalidCode;
 	}
-
 	CodeSpecifiers
 	result       = (CodeSpecifiers) make_code();
 	result->Type = CT_Specifiers;
 
 	va_list va;
 	va_start(va, num);
-	do
-	{
+	do {
 		Specifier type = (Specifier)va_arg(va, int);
-
 		specifiers_append(result, type );
 	}
 	while ( --num, num );
@@ -18223,25 +18522,20 @@ CodeSpecifiers def_specifiers( s32 num, ... )
 
 CodeSpecifiers def_specifiers( s32 num, Specifier* specs )
 {
-	if ( num <= 0 )
-	{
+	if ( num <= 0 ) {
 		log_failure("gen::def_specifiers: num cannot be zero or less");
 		return InvalidCode;
 	}
-
-	if ( num > AST_ArrSpecs_Cap )
-	{
+	if ( num > AST_ArrSpecs_Cap ) {
 		log_failure("gen::def_specifiers: num of speciifers to define AST larger than AST specicifier capacity - %d", num);
 		return InvalidCode;
 	}
-
 	CodeSpecifiers
 	result       = (CodeSpecifiers) make_code();
 	result->Type = CT_Specifiers;
 
 	s32 idx = 0;
-	do
-	{
+	do {
 		specifiers_append(result, specs[idx] );
 		idx++;
 	}
@@ -18264,13 +18558,10 @@ CodeBody def_struct_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast(Code, pod);
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_struct_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_STRUCT_UNALLOWED_TYPES:
@@ -18280,7 +18571,6 @@ CodeBody def_struct_body( s32 num, ... )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -18296,18 +18586,14 @@ CodeBody def_struct_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Struct_Body;
-
 	do
 	{
 		Code entry = *codes;
 		codes++;
-
-		if (!entry)
-		{
+		if ( ! entry) {
 			log_failure("gen::" "def_struct_body" ": Provided an null entry");
 			return InvalidCode;
 		}
-
 		switch (entry->Type)
 		{
 			GEN_AST_BODY_STRUCT_UNALLOWED_TYPES:
@@ -18317,7 +18603,6 @@ CodeBody def_struct_body( s32 num, Code* codes )
 			default:
 			break;
 		}
-
 		body_append(result, entry);
 	}
 	while (num--, num > 0);
@@ -18339,19 +18624,14 @@ CodeBody def_union_body( s32 num, ... )
 	{
 		Code_POD pod   = va_arg(va, Code_POD);
 		Code     entry = pcast( Code, pod );
-
-		if ( ! entry )
-		{
+		if ( ! entry ) {
 			log_failure("gen::def_union_body: Provided a null entry");
 			return InvalidCode;
 		}
-
-		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment )
-		{
+		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment ) {
 			log_failure("gen::def_union_body: Entry type is not allowed - %s. Must be of untyped or comment type.", code_debug_str(entry) );
 			return InvalidCode;
 		}
-
 		body_append(result, entry );
 	}
 	while ( num--, num > 0 );
@@ -18367,23 +18647,17 @@ CodeBody def_union_body( s32 num, Code* codes )
 	CodeBody
 	result       = (CodeBody) make_code();
 	result->Type = CT_Union_Body;
-
 	do
 	{
 		Code entry = *codes;
-
-		if ( ! entry )
-		{
+		if ( ! entry ) {
 			log_failure("gen::def_union_body: Provided a null entry");
 			return InvalidCode;
 		}
-
-		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment )
-		{
+		if ( entry->Type != CT_Untyped && entry->Type != CT_Comment ) {
 			log_failure("gen::def_union_body: Entry type is not allowed: %s", code_debug_str(entry) );
 			return InvalidCode;
 		}
-
 		body_append(result, entry );
 	}
 	while ( codes++, num--, num > 0 );
@@ -18400,349 +18674,19 @@ CodeBody def_union_body( s32 num, Code* codes )
 
 #pragma region Parsing
 
-GEN_NS_PARSER_BEGIN
 
-#define GEN_DEFINE_ATTRIBUTE_TOKENS Entry( Tok_Attribute_API_Export, "GEN_API_Export_Code" ) Entry( Tok_Attribute_API_Import, "GEN_API_Import_Code" )
-
-enum TokType : u32
+StrBuilder tok_to_strbuilder(Token tok)
 {
-	Tok_Invalid,
-	Tok_Access_Private,
-	Tok_Access_Protected,
-	Tok_Access_Public,
-	Tok_Access_MemberSymbol,
-	Tok_Access_StaticSymbol,
-	Tok_Ampersand,
-	Tok_Ampersand_DBL,
-	Tok_Assign_Classifer,
-	Tok_Attribute_Open,
-	Tok_Attribute_Close,
-	Tok_BraceCurly_Open,
-	Tok_BraceCurly_Close,
-	Tok_BraceSquare_Open,
-	Tok_BraceSquare_Close,
-	Tok_Capture_Start,
-	Tok_Capture_End,
-	Tok_Comment,
-	Tok_Comment_End,
-	Tok_Comment_Start,
-	Tok_Char,
-	Tok_Comma,
-	Tok_Decl_Class,
-	Tok_Decl_GNU_Attribute,
-	Tok_Decl_MSVC_Attribute,
-	Tok_Decl_Enum,
-	Tok_Decl_Extern_Linkage,
-	Tok_Decl_Friend,
-	Tok_Decl_Module,
-	Tok_Decl_Namespace,
-	Tok_Decl_Operator,
-	Tok_Decl_Struct,
-	Tok_Decl_Template,
-	Tok_Decl_Typedef,
-	Tok_Decl_Using,
-	Tok_Decl_Union,
-	Tok_Identifier,
-	Tok_Module_Import,
-	Tok_Module_Export,
-	Tok_NewLine,
-	Tok_Number,
-	Tok_Operator,
-	Tok_Preprocess_Hash,
-	Tok_Preprocess_Define,
-	Tok_Preprocess_If,
-	Tok_Preprocess_IfDef,
-	Tok_Preprocess_IfNotDef,
-	Tok_Preprocess_ElIf,
-	Tok_Preprocess_Else,
-	Tok_Preprocess_EndIf,
-	Tok_Preprocess_Include,
-	Tok_Preprocess_Pragma,
-	Tok_Preprocess_Content,
-	Tok_Preprocess_Macro,
-	Tok_Preprocess_Unsupported,
-	Tok_Spec_Alignas,
-	Tok_Spec_Const,
-	Tok_Spec_Consteval,
-	Tok_Spec_Constexpr,
-	Tok_Spec_Constinit,
-	Tok_Spec_Explicit,
-	Tok_Spec_Extern,
-	Tok_Spec_Final,
-	Tok_Spec_ForceInline,
-	Tok_Spec_Global,
-	Tok_Spec_GB_Global,
-	Tok_Spec_Inline,
-	Tok_Spec_GB_Inline,
-	Tok_Spec_Internal_Linkage,
-	Tok_Spec_GB_Internal,
-	Tok_Spec_LocalPersist,
-	Tok_Spec_Mutable,
-	Tok_Spec_NeverInline,
-	Tok_Spec_Override,
-	Tok_Spec_Static,
-	Tok_Spec_ThreadLocal,
-	Tok_Spec_Volatile,
-	Tok_Spec_Virtual,
-	Tok_Star,
-	Tok_Statement_End,
-	Tok_StaticAssert,
-	Tok_String,
-	Tok_Type_Typename,
-	Tok_Type_Unsigned,
-	Tok_Type_Signed,
-	Tok_Type_Short,
-	Tok_Type_Long,
-	Tok_Type_bool,
-	Tok_Type_char,
-	Tok_Type_int,
-	Tok_Type_double,
-	Tok_Type_MS_int8,
-	Tok_Type_MS_int16,
-	Tok_Type_MS_int32,
-	Tok_Type_MS_int64,
-	Tok_Type_MS_W64,
-	Tok_Varadic_Argument,
-	Tok___Attributes_Start,
-	Tok_Attribute_API_Export,
-	Tok_Attribute_API_Import,
-	Tok_NumTokens
-};
-
-inline Str toktype_to_str( TokType type )
-{
-	local_persist Str lookup[] = {
-		{ sizeof( "__invalid__" ),         "__invalid__"         },
-		{ sizeof( "private" ),             "private"             },
-		{ sizeof( "protected" ),           "protected"           },
-		{ sizeof( "public" ),              "public"              },
-		{ sizeof( "." ),                   "."                   },
-		{ sizeof( "::" ),                  "::"                  },
-		{ sizeof( "&" ),                   "&"                   },
-		{ sizeof( "&&" ),                  "&&"                  },
-		{ sizeof( ":" ),                   ":"                   },
-		{ sizeof( "[[" ),                  "[["                  },
-		{ sizeof( "]]" ),                  "]]"                  },
-		{ sizeof( "{" ),                   "{"                   },
-		{ sizeof( "}" ),                   "}"                   },
-		{ sizeof( "[" ),                   "["                   },
-		{ sizeof( "]" ),                   "]"                   },
-		{ sizeof( "(" ),                   "("                   },
-		{ sizeof( ")" ),                   ")"                   },
-		{ sizeof( "__comment__" ),         "__comment__"         },
-		{ sizeof( "__comment_end__" ),     "__comment_end__"     },
-		{ sizeof( "__comment_start__" ),   "__comment_start__"   },
-		{ sizeof( "__character__" ),       "__character__"       },
-		{ sizeof( "," ),                   ","                   },
-		{ sizeof( "class" ),               "class"               },
-		{ sizeof( "__attribute__" ),       "__attribute__"       },
-		{ sizeof( "__declspec" ),          "__declspec"          },
-		{ sizeof( "enum" ),                "enum"                },
-		{ sizeof( "extern" ),              "extern"              },
-		{ sizeof( "friend" ),              "friend"              },
-		{ sizeof( "module" ),              "module"              },
-		{ sizeof( "namespace" ),           "namespace"           },
-		{ sizeof( "operator" ),            "operator"            },
-		{ sizeof( "struct" ),              "struct"              },
-		{ sizeof( "template" ),            "template"            },
-		{ sizeof( "typedef" ),             "typedef"             },
-		{ sizeof( "using" ),               "using"               },
-		{ sizeof( "union" ),               "union"               },
-		{ sizeof( "__identifier__" ),      "__identifier__"      },
-		{ sizeof( "import" ),              "import"              },
-		{ sizeof( "export" ),              "export"              },
-		{ sizeof( "__new_line__" ),        "__new_line__"        },
-		{ sizeof( "__number__" ),          "__number__"          },
-		{ sizeof( "__operator__" ),        "__operator__"        },
-		{ sizeof( "#" ),                   "#"                   },
-		{ sizeof( "define" ),              "define"              },
-		{ sizeof( "if" ),                  "if"                  },
-		{ sizeof( "ifdef" ),               "ifdef"               },
-		{ sizeof( "ifndef" ),              "ifndef"              },
-		{ sizeof( "elif" ),                "elif"                },
-		{ sizeof( "else" ),                "else"                },
-		{ sizeof( "endif" ),               "endif"               },
-		{ sizeof( "include" ),             "include"             },
-		{ sizeof( "pragma" ),              "pragma"              },
-		{ sizeof( "__macro_content__" ),   "__macro_content__"   },
-		{ sizeof( "__macro__" ),           "__macro__"           },
-		{ sizeof( "__unsupported__" ),     "__unsupported__"     },
-		{ sizeof( "alignas" ),             "alignas"             },
-		{ sizeof( "const" ),               "const"               },
-		{ sizeof( "consteval" ),           "consteval"           },
-		{ sizeof( "constexpr" ),           "constexpr"           },
-		{ sizeof( "constinit" ),           "constinit"           },
-		{ sizeof( "explicit" ),            "explicit"            },
-		{ sizeof( "extern" ),              "extern"              },
-		{ sizeof( "final" ),               "final"               },
-		{ sizeof( "forceinline" ),         "forceinline"         },
-		{ sizeof( "global" ),              "global"              },
-		{ sizeof( "gb_global" ),           "gb_global"           },
-		{ sizeof( "inline" ),              "inline"              },
-		{ sizeof( "gb_inline" ),           "gb_inline"           },
-		{ sizeof( "internal" ),            "internal"            },
-		{ sizeof( "gb_internal" ),         "gb_internal"         },
-		{ sizeof( "local_persist" ),       "local_persist"       },
-		{ sizeof( "mutable" ),             "mutable"             },
-		{ sizeof( "neverinline" ),         "neverinline"         },
-		{ sizeof( "override" ),            "override"            },
-		{ sizeof( "static" ),              "static"              },
-		{ sizeof( "thread_local" ),        "thread_local"        },
-		{ sizeof( "volatile" ),            "volatile"            },
-		{ sizeof( "virtual" ),             "virtual"             },
-		{ sizeof( "*" ),                   "*"                   },
-		{ sizeof( ";" ),                   ";"                   },
-		{ sizeof( "static_assert" ),       "static_assert"       },
-		{ sizeof( "__string__" ),          "__string__"          },
-		{ sizeof( "typename" ),            "typename"            },
-		{ sizeof( "unsigned" ),            "unsigned"            },
-		{ sizeof( "signed" ),              "signed"              },
-		{ sizeof( "short" ),               "short"               },
-		{ sizeof( "long" ),                "long"                },
-		{ sizeof( "bool" ),                "bool"                },
-		{ sizeof( "char" ),                "char"                },
-		{ sizeof( "int" ),                 "int"                 },
-		{ sizeof( "double" ),              "double"              },
-		{ sizeof( "__int8" ),              "__int8"              },
-		{ sizeof( "__int16" ),             "__int16"             },
-		{ sizeof( "__int32" ),             "__int32"             },
-		{ sizeof( "__int64" ),             "__int64"             },
-		{ sizeof( "_W64" ),                "_W64"                },
-		{ sizeof( "..." ),                 "..."                 },
-		{ sizeof( "__attrib_start__" ),    "__attrib_start__"    },
-		{ sizeof( "GEN_API_Export_Code" ), "GEN_API_Export_Code" },
-		{ sizeof( "GEN_API_Import_Code" ), "GEN_API_Import_Code" },
-	};
-	return lookup[type];
-}
-
-inline TokType str_to_toktype( Str str )
-{
-	local_persist u32 keymap[Tok_NumTokens];
-	do_once_start for ( u32 index = 0; index < Tok_NumTokens; index++ )
-	{
-		Str enum_str  = toktype_to_str( (TokType)index );
-		keymap[index] = crc32( enum_str.Ptr, enum_str.Len - 1 );
-	}
-	do_once_end u32 hash = crc32( str.Ptr, str.Len );
-	for ( u32 index = 0; index < Tok_NumTokens; index++ )
-	{
-		if ( keymap[index] == hash )
-			return (TokType)index;
-	}
-	return Tok_Invalid;
-}
-
-GEN_NS_PARSER_END
-
-GEN_NS_PARSER_BEGIN
-
-enum TokFlags : u32
-{
-	TF_Operator		   = bit(0),
-	TF_Assign          = bit(1),
-	TF_Preprocess      = bit(2),
-	TF_Preprocess_Cond = bit(3),
-	TF_Attribute       = bit(6),
-	TF_AccessOperator  = bit( 7 ),
-	TF_AccessSpecifier = bit( 8 ),
-	TF_Specifier       = bit( 9 ),
-	TF_EndDefinition   = bit( 10 ),    // Either ; or }
-	TF_Formatting      = bit( 11 ),
-	TF_Literal         = bit( 12 ),
-
-	TF_Null = 0,
-	TF_UnderlyingType = GEN_U32_MAX,
-};
-
-struct Token
-{
-	char const* Text;
-	sptr        Length;
-	TokType     Type;
-	s32         Line;
-	s32         Column;
-	u32         Flags;
-};
-
-constexpr Token NullToken { nullptr, 0, Tok_Invalid, false, 0, TF_Null };
-
-AccessSpec tok_to_access_specifier(Token tok)
-{
-	return scast(AccessSpec, tok.Type);
-}
-
-Str tok_to_str(Token tok)
-{
-	Str str = { tok.Length, tok.Text };
-	return str;
-}
-
-bool tok_is_valid( Token tok )
-{
-	return tok.Text && tok.Length && tok.Type != Tok_Invalid;
-}
-
-bool tok_is_access_operator(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_AccessOperator );
-}
-
-bool tok_is_access_specifier(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_AccessSpecifier );
-}
-
-bool tok_is_attribute(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_Attribute );
-}
-
-bool tok_is_operator(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_Operator );
-}
-
-bool tok_is_preprocessor(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_Preprocess );
-}
-
-bool tok_is_preprocess_cond(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_Preprocess_Cond );
-}
-
-bool tok_is_specifier(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_Specifier );
-}
-
-bool tok_is_end_definition(Token tok)
-{
-	return bitfield_is_equal( u32, tok.Flags, TF_EndDefinition );
-}
-
-StrBuilder tok_to_string(Token tok)
-{
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, kilobytes(4) );
-
-	Str type_str = toktype_to_str( tok.Type );
+	StrBuilder result   = strbuilder_make_reserve( _ctx->Allocator_Temp, kilobytes(4) );
+	Str        type_str = toktype_to_str( tok.Type );
 
 	strbuilder_append_fmt( & result, "Line: %d Column: %d, Type: %.*s Content: %.*s"
 		, tok.Line, tok.Column
 		, type_str.Len, type_str.Ptr
-		, tok.Length, tok.Text
+		, tok.Text.Len, tok.Text.Ptr
 	);
-
 	return result;
 }
-
-struct TokArray
-{
-	Array(Token) Arr;
-	s32          Idx;
-};
 
 bool lex__eat( TokArray* self, TokType type );
 
@@ -18753,14 +18697,12 @@ Token* lex_current(TokArray* self, bool skip_formatting )
 		while ( self->Arr[self->Idx].Type == Tok_NewLine || self->Arr[self->Idx].Type == Tok_Comment  )
 			self->Idx++;
 	}
-
 	return & self->Arr[self->Idx];
 }
 
 Token* lex_peek(TokArray self, bool skip_formatting)
 {
 	s32 idx = self.Idx;
-
 	if ( skip_formatting )
 	{
 		while ( self.Arr[idx].Type == Tok_NewLine )
@@ -18768,14 +18710,12 @@ Token* lex_peek(TokArray self, bool skip_formatting)
 
 		return & self.Arr[idx];
 	}
-
 	return & self.Arr[idx];
 }
 
 Token* lex_previous(TokArray self, bool skip_formatting)
 {
 	s32 idx = self.Idx;
-
 	if ( skip_formatting )
 	{
 		while ( self.Arr[idx].Type == Tok_NewLine )
@@ -18783,14 +18723,12 @@ Token* lex_previous(TokArray self, bool skip_formatting)
 
 		return & self.Arr[idx];
 	}
-
 	return & self.Arr[idx - 1];
 }
 
 Token* lex_next(TokArray self, bool skip_formatting)
 {
 	s32 idx = self.Idx;
-
 	if ( skip_formatting )
 	{
 		while ( self.Arr[idx].Type == Tok_NewLine )
@@ -18798,29 +18736,13 @@ Token* lex_next(TokArray self, bool skip_formatting)
 
 		return & self.Arr[idx + 1];
 	}
-
 	return & self.Arr[idx + 1];
 }
-
-global FixedArena_256KB Lexer_defines_map_arena;
-global StringTable      Lexer_defines;
-global Array(Token)     Lexer_Tokens;
 
 enum
 {
 	Lex_Continue,
 	Lex_ReturnNull,
-};
-
-struct LexContext
-{
-	Str            content;
-	s32             left;
-	char const*     scanner;
-	s32             line;
-	s32             column;
-	StringTable     defines;
-	Token           token;
 };
 
 forceinline
@@ -18865,17 +18787,17 @@ forceinline
 s32 lex_preprocessor_directive( LexContext* ctx )
 {
 	char const* hash = ctx->scanner;
-	Token hash_tok = { hash, 1, Tok_Preprocess_Hash, ctx->line, ctx->column, TF_Preprocess };
-	array_append( Lexer_Tokens, hash_tok  );
+	Token hash_tok = { { hash, 1 }, Tok_Preprocess_Hash, ctx->line, ctx->column, TF_Preprocess };
+	array_append( _ctx->Lexer_Tokens, hash_tok  );
 
 	move_forward();
 	skip_whitespace();
 
-	ctx->token.Text = ctx->scanner;
+	ctx->token.Text.Ptr = ctx->scanner;
 	while (ctx->left && ! char_is_space((* ctx->scanner)) )
 	{
 		move_forward();
-		ctx->token.Length++;
+		ctx->token.Text.Len++;
 	}
 
 	ctx->token.Type = str_to_toktype( tok_to_str(ctx->token) );
@@ -18899,18 +18821,18 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 			if ( * ctx->scanner == '\\' && ! within_string && ! within_char )
 			{
 				move_forward();
-				ctx->token.Length++;
+				ctx->token.Text.Len++;
 
 				if ( (* ctx->scanner) == '\r' )
 				{
 					move_forward();
-					ctx->token.Length++;
+					ctx->token.Text.Len++;
 				}
 
 				if ( (* ctx->scanner) == '\n' )
 				{
 					move_forward();
-					ctx->token.Length++;
+					ctx->token.Text.Len++;
 					continue;
 				}
 				else
@@ -18926,30 +18848,30 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 			if ( (* ctx->scanner) == '\r' )
 			{
 				move_forward();
-				ctx->token.Length++;
+				ctx->token.Text.Len++;
 			}
 
 			if ( (* ctx->scanner) == '\n' )
 			{
 				move_forward();
-				ctx->token.Length++;
+				ctx->token.Text.Len++;
 				break;
 			}
 
 			move_forward();
-			ctx->token.Length++;
+			ctx->token.Text.Len++;
 		}
 
-		ctx->token.Length = ctx->token.Length + ctx->token.Text - hash;
-		ctx->token.Text   = hash;
-		array_append( Lexer_Tokens, ctx->token );
+		ctx->token.Text.Len = ctx->token.Text.Len + ctx->token.Text.Ptr - hash;
+		ctx->token.Text.Ptr = hash;
+		array_append( _ctx->Lexer_Tokens, ctx->token );
 		return Lex_Continue; // Skip found token, its all handled here.
 	}
 
 	if ( ctx->token.Type == Tok_Preprocess_Else || ctx->token.Type == Tok_Preprocess_EndIf )
 	{
 		ctx->token.Flags |= TF_Preprocess_Cond;
-		array_append( Lexer_Tokens, ctx->token );
+		array_append( _ctx->Lexer_Tokens, ctx->token );
 		end_line();
 		return Lex_Continue;
 	}
@@ -18958,37 +18880,37 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 		ctx->token.Flags |= TF_Preprocess_Cond;
 	}
 
-	array_append( Lexer_Tokens, ctx->token );
+	array_append( _ctx->Lexer_Tokens, ctx->token );
 
 	skip_whitespace();
 
 	if ( ctx->token.Type == Tok_Preprocess_Define )
 	{
-		Token name = { ctx->scanner, 0, Tok_Identifier, ctx->line, ctx->column, TF_Preprocess };
+		Token name = { { ctx->scanner, 0 }, Tok_Identifier, ctx->line, ctx->column, TF_Preprocess };
 
-		name.Text   = ctx->scanner;
-		name.Length = 1;
+		name.Text.Ptr = ctx->scanner;
+		name.Text.Len = 1;
 		move_forward();
 
 		while ( ctx->left && ( char_is_alphanumeric((* ctx->scanner)) || (* ctx->scanner) == '_' ) )
 		{
 			move_forward();
-			name.Length++;
+			name.Text.Len++;
 		}
 
 		if ( ctx->left && (* ctx->scanner) == '(' )
 		{
 			move_forward();
-			name.Length++;
+			name.Text.Len++;
 		}
 
-		array_append( Lexer_Tokens, name );
+		array_append( _ctx->Lexer_Tokens, name );
 
-		u64 key = crc32( name.Text, name.Length );
+		u64 key = crc32( name.Text.Ptr, name.Text.Len );
 		hashtable_set(ctx->defines, key, tok_to_str(name) );
 	}
 
-	Token preprocess_content = { ctx->scanner, 0, Tok_Preprocess_Content, ctx->line, ctx->column, TF_Preprocess };
+	Token preprocess_content = { { ctx->scanner, 0 }, Tok_Preprocess_Content, ctx->line, ctx->column, TF_Preprocess };
 
 	if ( ctx->token.Type == Tok_Preprocess_Include )
 	{
@@ -18996,7 +18918,7 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 
 		if ( (* ctx->scanner) != '"' && (* ctx->scanner) != '<' )
 		{
-			StrBuilder directive_str = strbuilder_fmt_buf( GlobalAllocator, "%.*s", min( 80, ctx->left + preprocess_content.Length ), ctx->token.Text );
+			StrBuilder directive_str = strbuilder_fmt_buf( _ctx->Allocator_Temp, "%.*s", min( 80, ctx->left + preprocess_content.Text.Len ), ctx->token.Text.Ptr );
 
 			log_failure( "gen::Parser::lex: Expected '\"' or '<' after #include, not '%c' (%d, %d)\n%s"
 				, (* ctx->scanner)
@@ -19007,16 +18929,16 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 			return Lex_ReturnNull;
 		}
 		move_forward();
-		preprocess_content.Length++;
+		preprocess_content.Text.Len++;
 
 		while ( ctx->left && (* ctx->scanner) != '"' && (* ctx->scanner) != '>' )
 		{
 			move_forward();
-			preprocess_content.Length++;
+			preprocess_content.Text.Len++;
 		}
 
 		move_forward();
-		preprocess_content.Length++;
+		preprocess_content.Text.Len++;
 
 		if ( (* ctx->scanner) == '\r' && ctx->scanner[1] == '\n' )
 		{
@@ -19028,7 +18950,7 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 			move_forward();
 		}
 
-		array_append( Lexer_Tokens, preprocess_content );
+		array_append( _ctx->Lexer_Tokens, preprocess_content );
 		return Lex_Continue; // Skip found token, its all handled here.
 	}
 
@@ -19047,24 +18969,24 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 		if ( (* ctx->scanner) == '\\' && ! within_string && ! within_char )
 		{
 			move_forward();
-			preprocess_content.Length++;
+			preprocess_content.Text.Len++;
 
 			if ( (* ctx->scanner) == '\r' )
 			{
 				move_forward();
-				preprocess_content.Length++;
+				preprocess_content.Text.Len++;
 			}
 
 			if ( (* ctx->scanner) == '\n' )
 			{
 				move_forward();
-				preprocess_content.Length++;
+				preprocess_content.Text.Len++;
 				continue;
 			}
 			else
 			{
-				StrBuilder directive_str = strbuilder_make_length( GlobalAllocator, ctx->token.Text, ctx->token.Length );
-				StrBuilder content_str   = strbuilder_fmt_buf( GlobalAllocator, "%.*s", min( 400, ctx->left + preprocess_content.Length ), preprocess_content.Text );
+				StrBuilder directive_str = strbuilder_make_length( _ctx->Allocator_Temp, ctx->token.Text.Ptr, ctx->token.Text.Len );
+				StrBuilder content_str   = strbuilder_fmt_buf( _ctx->Allocator_Temp, "%.*s", min( 400, ctx->left + preprocess_content.Text.Len ), preprocess_content.Text.Ptr );
 
 				log_failure( "gen::Parser::lex: Invalid escape sequence '\\%c' (%d, %d)"
 							" in preprocessor directive '%s' (%d, %d)\n%s"
@@ -19088,10 +19010,10 @@ s32 lex_preprocessor_directive( LexContext* ctx )
 		}
 
 		move_forward();
-		preprocess_content.Length++;
+		preprocess_content.Text.Len++;
 	}
 
-	array_append( Lexer_Tokens, preprocess_content );
+	array_append( _ctx->Lexer_Tokens, preprocess_content );
 	return Lex_Continue; // Skip found token, its all handled here.
 }
 
@@ -19100,7 +19022,7 @@ void lex_found_token( LexContext* ctx )
 {
 	if ( ctx->token.Type != Tok_Invalid )
 	{
-		array_append( Lexer_Tokens, ctx->token );
+		array_append( _ctx->Lexer_Tokens, ctx->token );
 		return;
 	}
 
@@ -19127,7 +19049,7 @@ void lex_found_token( LexContext* ctx )
 		}
 
 		ctx->token.Type = type;
-		array_append( Lexer_Tokens, ctx->token );
+		array_append( _ctx->Lexer_Tokens, ctx->token );
 		return;
 	}
 
@@ -19137,7 +19059,7 @@ void lex_found_token( LexContext* ctx )
 	{
 		ctx->token.Type   = type;
 		ctx->token.Flags |= TF_Specifier;
-		array_append( Lexer_Tokens, ctx->token );
+		array_append( _ctx->Lexer_Tokens, ctx->token );
 		return;
 	}
 
@@ -19145,15 +19067,15 @@ void lex_found_token( LexContext* ctx )
 	if ( type != Tok_Invalid )
 	{
 		ctx->token.Type = type;
-		array_append( Lexer_Tokens, ctx->token );
+		array_append( _ctx->Lexer_Tokens, ctx->token );
 		return;
 	}
 
 	u64 key = 0;
 	if ( (* ctx->scanner) == '(')
-		key = crc32( ctx->token.Text, ctx->token.Length + 1 );
+		key = crc32( ctx->token.Text.Ptr, ctx->token.Text.Len + 1 );
 	else
-		key = crc32( ctx->token.Text, ctx->token.Length );
+		key = crc32( ctx->token.Text.Ptr, ctx->token.Text.Len );
 
 	Str* define = hashtable_get(ctx->defines, key );
 	if ( define )
@@ -19164,7 +19086,7 @@ void lex_found_token( LexContext* ctx )
 		if ( ctx->left && (* ctx->scanner) == '(' )
 		{
 			move_forward();
-			ctx->token.Length++;
+			ctx->token.Text.Len++;
 
 			s32 level = 0;
 			while ( ctx->left && ((* ctx->scanner) != ')' || level > 0) )
@@ -19176,22 +19098,22 @@ void lex_found_token( LexContext* ctx )
 					level--;
 
 				move_forward();
-				ctx->token.Length++;
+				ctx->token.Text.Len++;
 			}
 
 			move_forward();
-			ctx->token.Length++;
+			ctx->token.Text.Len++;
 		}
 
 		//if ( (* ctx->scanner) == '\r' && ctx->scanner[1] == '\n' )
 		//{
 		//	move_forward();
-		//	ctx->token.Length++;
+		//	ctx->token..Text.Length++;
 		//}
 		//else if ( (* ctx->scanner) == '\n' )
 		//{
 		//	move_forward();
-		//	ctx->token.Length++;
+		//	ctx->token..Text.Length++;
 		//}
 	}
 	else
@@ -19199,7 +19121,7 @@ void lex_found_token( LexContext* ctx )
 		ctx->token.Type = Tok_Identifier;
 	}
 
-	array_append( Lexer_Tokens, ctx->token );
+	array_append( _ctx->Lexer_Tokens, ctx->token );
 }
 
 neverinline
@@ -19210,7 +19132,7 @@ TokArray lex( Str content )
 	c.content = content;
 	c.left    = content.Len;
 	c.scanner = content.Ptr;
-	c.defines = Lexer_defines;
+	c.defines = _ctx->Lexer_defines;
 
 	char const* word        = c.scanner;
 	s32         word_length = 0;
@@ -19226,7 +19148,7 @@ TokArray lex( Str content )
 		return null_array;
 	}
 
-	for ( StringCached* entry = array_begin(PreprocessorDefines); entry != array_end(PreprocessorDefines); entry = array_next(PreprocessorDefines, entry))
+	for ( StrCached* entry = array_begin(_ctx->PreprocessorDefines); entry != array_end(_ctx->PreprocessorDefines); entry = array_next(_ctx->PreprocessorDefines, entry))
 	{
 		s32         length  = 0;
 		char const* entry_scanner = (*entry).Ptr;
@@ -19244,19 +19166,19 @@ TokArray lex( Str content )
 		hashtable_set(c.defines, key, * entry );
 	}
 
-	array_clear(Lexer_Tokens);
+	array_clear(_ctx->Lexer_Tokens);
 
 	while (c.left )
 	{
 		#if 0
 		if (Tokens.num())
 		{
-			log_fmt("\nLastTok: %SB", Tokens.back().to_string());
+			log_fmt("\nLastTok: %SB", Tokens.back().to_strbuilder());
 		}
 		#endif
 
 		{
-			Token thanks_c = { c.scanner, 0, Tok_Invalid, c.line, c.column, TF_Null };
+			Token thanks_c = { { c.scanner, 0 }, Tok_Invalid, c.line, c.column, TF_Null };
 			c.token = thanks_c;
 		}
 
@@ -19267,7 +19189,7 @@ TokArray lex( Str content )
 			if ( (* ctx->scanner) == '\r')
 			{
 				move_forward();
-				c.token.Length = 1;
+				c.token.Text.Len = 1;
 			}
 
 			if ( (* ctx->scanner) == '\n' )
@@ -19275,14 +19197,14 @@ TokArray lex( Str content )
 				move_forward();
 
 				c.token.Type = Tok_NewLine;
-				c.token.Length++;
+				c.token.Text.Len++;
 
-				array_append( Lexer_Tokens, c.token );
+				array_append( _ctx->Lexer_Tokens, c.token );
 				continue;
 			}
 		}
 
-		c.token.Length = 0;
+		c.token.Text.Len = 0;
 
 		skip_whitespace();
 		if ( c.left <= 0 )
@@ -19301,22 +19223,22 @@ TokArray lex( Str content )
 						//if ( last_type == Tok_Preprocess_Pragma )
 						{
 							{
-								Token thanks_c = { c.scanner, 0, Tok_Invalid, c.line, c.column, TF_Null };
+								Token thanks_c = { { c.scanner, 0 }, Tok_Invalid, c.line, c.column, TF_Null };
 								c.token = thanks_c;
 							}
 							if ( (* ctx->scanner) == '\r')
 							{
 								move_forward();
-								c.token.Length = 1;
+								c.token.Text.Len = 1;
 							}
 
 							if ( (* ctx->scanner) == '\n' )
 							{
 								c.token.Type = Tok_NewLine;
-								c.token.Length++;
+								c.token.Text.Len++;
 								move_forward();
 
-								array_append( Lexer_Tokens, c.token );
+								array_append( _ctx->Lexer_Tokens, c.token );
 							}
 						}
 						continue;
@@ -19331,8 +19253,8 @@ TokArray lex( Str content )
 			}
 			case '.':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Access_MemberSymbol;
 				c.token.Flags  = TF_AccessOperator;
 
@@ -19345,14 +19267,14 @@ TokArray lex( Str content )
 					move_forward();
 					if( (* ctx->scanner) == '.' )
 					{
-						c.token.Length = 3;
-						c.token.Type   = Tok_Varadic_Argument;
-						c.token.Flags  = TF_Null;
+						c.token.Text.Len = 3;
+						c.token.Type     = Tok_Varadic_Argument;
+						c.token.Flags    = TF_Null;
 						move_forward();
 					}
 					else
 					{
-						StrBuilder context_str = strbuilder_fmt_buf( GlobalAllocator, "%s", c.scanner, min( 100, c.left ) );
+						StrBuilder context_str = strbuilder_fmt_buf( _ctx->Allocator_Temp, "%s", c.scanner, min( 100, c.left ) );
 
 						log_failure( "gen::lex: invalid varadic argument, expected '...' got '..%c' (%d, %d)\n%s", (* ctx->scanner), c.line, c.column, context_str );
 					}
@@ -19362,8 +19284,8 @@ TokArray lex( Str content )
 			}
 			case '&' :
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Ampersand;
 				c.token.Flags |= TF_Operator;
 				c.token.Flags |= TF_Specifier;
@@ -19373,8 +19295,8 @@ TokArray lex( Str content )
 
 				if ( (* ctx->scanner) == '&' )	// &&
 				{
-					c.token.Length  = 2;
-					c.token.Type    = Tok_Ampersand_DBL;
+					c.token.Text.Len = 2;
+					c.token.Type     = Tok_Ampersand_DBL;
 
 					if (c.left)
 						move_forward();
@@ -19384,9 +19306,9 @@ TokArray lex( Str content )
 			}
 			case ':':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
-				c.token.Type   = Tok_Assign_Classifer;
+				Str text = { c.scanner, 1 };
+				c.token.Text = text;
+				c.token.Type = Tok_Assign_Classifer;
 				// Can be either a classifier (ParentType, Bitfield width), or ternary else
 				// token.Type   = Tok_Colon;
 
@@ -19396,15 +19318,15 @@ TokArray lex( Str content )
 				if ( (* ctx->scanner) == ':' )
 				{
 					move_forward();
-					c.token.Type  = Tok_Access_StaticSymbol;
-					c.token.Length++;
+					c.token.Type = Tok_Access_StaticSymbol;
+					c.token.Text.Len++;
 				}
 				goto FoundToken;
 			}
 			case '{':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_BraceCurly_Open;
 
 				if (c.left)
@@ -19413,8 +19335,8 @@ TokArray lex( Str content )
 			}
 			case '}':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_BraceCurly_Close;
 				c.token.Flags  = TF_EndDefinition;
 
@@ -19426,8 +19348,8 @@ TokArray lex( Str content )
 			}
 			case '[':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_BraceSquare_Open;
 				if ( c.left )
 				{
@@ -19435,8 +19357,8 @@ TokArray lex( Str content )
 
 					if ( (* ctx->scanner) == ']' )
 					{
-						c.token.Length = 2;
-						c.token.Type   = Tok_Operator;
+						c.token.Text.Len = 2;
+						c.token.Type     = Tok_Operator;
 						move_forward();
 					}
 				}
@@ -19444,8 +19366,8 @@ TokArray lex( Str content )
 			}
 			case ']':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_BraceSquare_Close;
 
 				if (c.left)
@@ -19454,8 +19376,8 @@ TokArray lex( Str content )
 			}
 			case '(':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Capture_Start;
 
 				if (c.left)
@@ -19464,8 +19386,8 @@ TokArray lex( Str content )
 			}
 			case ')':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Capture_End;
 
 				if (c.left)
@@ -19474,8 +19396,8 @@ TokArray lex( Str content )
 			}
 			case '\'':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Char;
 				c.token.Flags  = TF_Literal;
 
@@ -19484,32 +19406,32 @@ TokArray lex( Str content )
 				if ( c.left && (* ctx->scanner) == '\\' )
 				{
 					move_forward();
-					c.token.Length++;
+					c.token.Text.Len++;
 
 					if ( (* ctx->scanner) == '\'' )
 					{
 						move_forward();
-						c.token.Length++;
+						c.token.Text.Len++;
 					}
 				}
 
 				while ( c.left && (* ctx->scanner) != '\'' )
 				{
 					move_forward();
-					c.token.Length++;
+					c.token.Text.Len++;
 				}
 
 				if ( c.left )
 				{
 					move_forward();
-					c.token.Length++;
+					c.token.Text.Len++;
 				}
 				goto FoundToken;
 			}
 			case ',':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Comma;
 				c.token.Flags  = TF_Operator;
 
@@ -19519,8 +19441,8 @@ TokArray lex( Str content )
 			}
 			case '*':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Star;
 				c.token.Flags |= TF_Specifier;
 				c.token.Flags |= TF_Operator;
@@ -19530,7 +19452,7 @@ TokArray lex( Str content )
 
 				if ( (* ctx->scanner) == '=' )
 				{
-					c.token.Length++;
+					c.token.Text.Len++;
 					c.token.Flags |= TF_Assign;
 					// c.token.Type = Tok_Assign_Multiply;
 
@@ -19542,8 +19464,8 @@ TokArray lex( Str content )
 			}
 			case ';':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Statement_End;
 				c.token.Flags  = TF_EndDefinition;
 
@@ -19555,8 +19477,8 @@ TokArray lex( Str content )
 			}
 			case '"':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_String;
 				c.token.Flags |= TF_Literal;
 
@@ -19572,25 +19494,25 @@ TokArray lex( Str content )
 					if ( (* ctx->scanner) == '\\' )
 					{
 						move_forward();
-						c.token.Length++;
+						c.token.Text.Len++;
 
 						if ( c.left )
 						{
 							move_forward();
-							c.token.Length++;
+							c.token.Text.Len++;
 						}
 						continue;
 					}
 
 					move_forward();
-					c.token.Length++;
+					c.token.Text.Len++;
 				}
 				goto FoundToken;
 			}
 			case '?':
 			{
-				c.token.Text     = c.scanner;
-				c.token.Length   = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text     = text;
 				c.token.Type     = Tok_Operator;
 				// c.token.Type     = Tok_Ternary;
 				c.token.Flags    = TF_Operator;
@@ -19602,8 +19524,8 @@ TokArray lex( Str content )
 			}
 			case '=':
 			{
-				c.token.Text     = c.scanner;
-				c.token.Length   = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text     = text;
 				c.token.Type     = Tok_Operator;
 				// c.token.Type     = Tok_Assign;
 				c.token.Flags    = TF_Operator;
@@ -19614,7 +19536,7 @@ TokArray lex( Str content )
 
 				if ( (* ctx->scanner) == '=' )
 				{
-					c.token.Length++;
+					c.token.Text.Len++;
 					c.token.Flags = TF_Operator;
 
 					if (c.left)
@@ -19658,8 +19580,8 @@ TokArray lex( Str content )
 			}
 			case '|':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Operator;
 				c.token.Flags  = TF_Operator;
 				// token.Type   = Tok_L_Or;
@@ -19669,7 +19591,7 @@ TokArray lex( Str content )
 
 				if ( (* ctx->scanner) == '=' )
 				{
-					c.token.Length++;
+					c.token.Text.Len++;
 					c.token.Flags |= TF_Assign;
 					// token.Flags |= TokFlags::Assignment;
 					// token.Type = Tok_Assign_L_Or;
@@ -19677,9 +19599,9 @@ TokArray lex( Str content )
 					if (c.left)
 						move_forward();
 				}
-				else while ( c.left && (* ctx->scanner) == *(c.scanner - 1) && c.token.Length < 3 )
+				else while ( c.left && (* ctx->scanner) == *(c.scanner - 1) && c.token.Text.Len < 3 )
 				{
-					c.token.Length++;
+					c.token.Text.Len++;
 
 					if (c.left)
 						move_forward();
@@ -19690,8 +19612,8 @@ TokArray lex( Str content )
 			// Dash is unfortunatlly a bit more complicated...
 			case '-':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Operator;
 				// token.Type = Tok_Subtract;
 				c.token.Flags  = TF_Operator;
@@ -19701,7 +19623,7 @@ TokArray lex( Str content )
 
 					if ( (* ctx->scanner) == '>'  )
 					{
-						c.token.Length++;
+						c.token.Text.Len++;
 //						token.Type = Tok_Access_PointerToMemberSymbol;
 						c.token.Flags |= TF_AccessOperator;
 						move_forward();
@@ -19709,22 +19631,22 @@ TokArray lex( Str content )
 						if ( (* ctx->scanner) == '*' )
 						{
 //							token.Type = Tok_Access_PointerToMemberOfPointerSymbol;
-							c.token.Length++;
+							c.token.Text.Len++;
 							move_forward();
 						}
 					}
 					else if ( (* ctx->scanner) == '=' )
 					{
-						c.token.Length++;
+						c.token.Text.Len++;
 						// token.Type = Tok_Assign_Subtract;
 						c.token.Flags |= TF_Assign;
 
 						if (c.left)
 							move_forward();
 					}
-					else while ( c.left && (* ctx->scanner) == *(c.scanner - 1) && c.token.Length < 3 )
+					else while ( c.left && (* ctx->scanner) == *(c.scanner - 1) && c.token.Text.Len < 3 )
 					{
-						c.token.Length++;
+						c.token.Text.Len++;
 
 						if (c.left)
 							move_forward();
@@ -19734,8 +19656,8 @@ TokArray lex( Str content )
 			}
 			case '/':
 			{
-				c.token.Text   = c.scanner;
-				c.token.Length = 1;
+				Str text = { c.scanner, 1 };
+				c.token.Text   = text;
 				c.token.Type   = Tok_Operator;
 				// token.Type   = Tok_Divide;
 				c.token.Flags  = TF_Operator;
@@ -19747,40 +19669,40 @@ TokArray lex( Str content )
 					{
 						// token.Type = TokeType::Assign_Divide;
 						move_forward();
-						c.token.Length++;
+						c.token.Text.Len++;
 						c.token.Flags = TF_Assign;
 					}
 					else if ( (* ctx->scanner) == '/' )
 					{
-						c.token.Type   = Tok_Comment;
-						c.token.Length = 2;
-						c.token.Flags  = TF_Null;
+						c.token.Type     = Tok_Comment;
+						c.token.Text.Len = 2;
+						c.token.Flags    = TF_Null;
 						move_forward();
 
 						while ( c.left && (* ctx->scanner) != '\n' && (* ctx->scanner) != '\r' )
 						{
 							move_forward();
-							c.token.Length++;
+							c.token.Text.Len++;
 						}
 
 						if ( (* ctx->scanner) == '\r' )
 						{
 							move_forward();
-							c.token.Length++;
+							c.token.Text.Len++;
 						}
 						if ( (* ctx->scanner) == '\n' )
 						{
 							move_forward();
-							c.token.Length++;
+							c.token.Text.Len++;
 						}
-						array_append( Lexer_Tokens, c.token );
+						array_append( _ctx->Lexer_Tokens, c.token );
 						continue;
 					}
 					else if ( (* ctx->scanner) == '*' )
 					{
-						c.token.Type   = Tok_Comment;
-						c.token.Length = 2;
-						c.token.Flags  = TF_Null;
+						c.token.Type     = Tok_Comment;
+						c.token.Text.Len = 2;
+						c.token.Flags    = TF_Null;
 						move_forward();
 
 						bool star   = (* ctx->scanner)    == '*';
@@ -19789,27 +19711,27 @@ TokArray lex( Str content )
 						while ( c.left && ! at_end  )
 						{
 							move_forward();
-							c.token.Length++;
+							c.token.Text.Len++;
 
 							star   = (* ctx->scanner)    == '*';
 							slash  = c.scanner[1] == '/';
 							at_end = star && slash;
 						}
-						c.token.Length += 2;
+						c.token.Text.Len += 2;
 						move_forward();
 						move_forward();
 
 						if ( (* ctx->scanner) == '\r' )
 						{
 							move_forward();
-							c.token.Length++;
+							c.token.Text.Len++;
 						}
 						if ( (* ctx->scanner) == '\n' )
 						{
 							move_forward();
-							c.token.Length++;
+							c.token.Text.Len++;
 						}
-						array_append( Lexer_Tokens, c.token );
+						array_append( _ctx->Lexer_Tokens, c.token );
 						// end_line();
 						continue;
 					}
@@ -19820,14 +19742,14 @@ TokArray lex( Str content )
 
 		if ( char_is_alpha( (* ctx->scanner) ) || (* ctx->scanner) == '_' )
 		{
-			c.token.Text   = c.scanner;
-			c.token.Length = 1;
+			Str text = { c.scanner, 1 };
+			c.token.Text = text;
 			move_forward();
 
 			while ( c.left && ( char_is_alphanumeric((* ctx->scanner)) || (* ctx->scanner) == '_' ) )
 			{
 				move_forward();
-				c.token.Length++;
+				c.token.Text.Len++;
 			}
 
 			goto FoundToken;
@@ -19836,8 +19758,8 @@ TokArray lex( Str content )
 		{
 			// This is a very brute force lex, no checks are done for validity of literal.
 
-			c.token.Text   = c.scanner;
-			c.token.Length = 1;
+			Str text = { c.scanner, 1 };
+			c.token.Text   = text;
 			c.token.Type   = Tok_Number;
 			c.token.Flags  = TF_Literal;
 			move_forward();
@@ -19849,12 +19771,12 @@ TokArray lex( Str content )
 			)
 			{
 				move_forward();
-				c.token.Length++;
+				c.token.Text.Len++;
 
 				while ( c.left && char_is_hex_digit((* ctx->scanner)) )
 				{
 					move_forward();
-					c.token.Length++;
+					c.token.Text.Len++;
 				}
 
 				goto FoundToken;
@@ -19863,18 +19785,18 @@ TokArray lex( Str content )
 			while ( c.left && char_is_digit((* ctx->scanner)) )
 			{
 				move_forward();
-				c.token.Length++;
+				c.token.Text.Len++;
 			}
 
 			if ( c.left && (* ctx->scanner) == '.' )
 			{
 				move_forward();
-				c.token.Length++;
+				c.token.Text.Len++;
 
 				while ( c.left && char_is_digit((* ctx->scanner)) )
 				{
 					move_forward();
-					c.token.Length++;
+					c.token.Text.Len++;
 				}
 
 				// Handle number literal suffixes in a botched way
@@ -19887,13 +19809,13 @@ TokArray lex( Str content )
 				{
 					char prev = (* ctx->scanner);
 					move_forward();
-					c.token.Length++;
+					c.token.Text.Len++;
 
 					// Handle 'll'/'LL' as a special case when we just processed an 'l'/'L'
 					if (c.left && (prev == 'l' || prev == 'L') && ((* ctx->scanner) == 'l' || (* ctx->scanner) == 'L'))
 					{
 						move_forward();
-						c.token.Length++;
+						c.token.Text.Len++;
 					}
 				}
 			}
@@ -19902,18 +19824,18 @@ TokArray lex( Str content )
 		}
 		else
 		{
-			s32 start = max( 0, array_num(Lexer_Tokens) - 100 );
+			s32 start = max( 0, array_num(_ctx->Lexer_Tokens) - 100 );
 			log_fmt("\n%d\n", start);
-			for ( s32 idx = start; idx < array_num(Lexer_Tokens); idx++ )
+			for ( s32 idx = start; idx < array_num(_ctx->Lexer_Tokens); idx++ )
 			{
 				log_fmt( "Token %d Type: %s : %.*s\n"
 					, idx
-					, toktype_to_str( Lexer_Tokens[ idx ].Type ).Ptr
-					, Lexer_Tokens[ idx ].Length, Lexer_Tokens[ idx ].Text
+					, toktype_to_str( _ctx->Lexer_Tokens[ idx ].Type ).Ptr
+					, _ctx->Lexer_Tokens[ idx ].Text.Len, _ctx->Lexer_Tokens[ idx ].Text.Ptr
 				);
 			}
 
-			StrBuilder context_str = strbuilder_fmt_buf( GlobalAllocator, "%.*s", min( 100, c.left ), c.scanner );
+			StrBuilder context_str = strbuilder_fmt_buf( _ctx->Allocator_Temp, "%.*s", min( 100, c.left ), c.scanner );
 			log_failure( "Failed to lex token '%c' (%d, %d)\n%s", (* ctx->scanner), c.line, c.column, context_str );
 
 			// Skip to next whitespace since we can't know if anything else is valid until then.
@@ -19926,31 +19848,31 @@ TokArray lex( Str content )
 		FoundToken:
 		{
 			lex_found_token( ctx );
-			TokType last_type = array_back(Lexer_Tokens)->Type;
+			TokType last_type = array_back(_ctx->Lexer_Tokens)->Type;
 			if ( last_type == Tok_Preprocess_Macro )
 			{
-				Token thanks_c = { c.scanner, 0, Tok_Invalid, c.line, c.column, TF_Null };
+				Token thanks_c = { { c.scanner, 0 }, Tok_Invalid, c.line, c.column, TF_Null };
 				c.token = thanks_c;
 				if ( (* ctx->scanner) == '\r')
 				{
 					move_forward();
-					c.token.Length = 1;
+					c.token.Text.Len = 1;
 				}
 
 				if ( (* ctx->scanner) == '\n' )
 				{
 					c.token.Type = Tok_NewLine;
-					c.token.Length++;
+					c.token.Text.Len++;
 					move_forward();
 
-					array_append( Lexer_Tokens, c.token );
+					array_append( _ctx->Lexer_Tokens, c.token );
 					continue;
 				}
 			}
 		}
 	}
 
-	if ( array_num(Lexer_Tokens) == 0 )
+	if ( array_num(_ctx->Lexer_Tokens) == 0 )
 	{
 		log_failure( "Failed to lex any tokens" );
 		{
@@ -19959,38 +19881,19 @@ TokArray lex( Str content )
 		}
 	}
 
-	hashtable_clear(Lexer_defines);
+	hashtable_clear(_ctx->Lexer_defines);
 	// defines_map_arena.free();
-	TokArray result = { Lexer_Tokens, 0 };
+	TokArray result = { _ctx->Lexer_Tokens, 0 };
 	return result;
 }
 #undef move_forward
 #undef skip_whitespace
 #undef end_line
 
-GEN_NS_PARSER_END
-
-GEN_NS_PARSER_BEGIN
-
 // TODO(Ed) : Rename ETok_Capture_Start, ETok_Capture_End to Open_Parenthesis adn Close_Parenthesis
 
 constexpr bool lex_dont_skip_formatting = false;
 constexpr bool      lex_skip_formatting = true;
-
-struct StackNode
-{
-	StackNode* Prev;
-
-	Token Start;
-	Token Name;        // The name of the AST node (if parsed)
-	Str  ProcName;    // The name of the procedure
-};
-
-struct ParseContext
-{
-	TokArray   Tokens;
-	StackNode* Scope;
-};
 
 void parser_push( ParseContext* ctx, StackNode* node )
 {
@@ -19998,43 +19901,43 @@ void parser_push( ParseContext* ctx, StackNode* node )
 	ctx->Scope = node;
 
 #if 0 && GEN_BUILD_DEBUG
-	log_fmt("\tEntering Context: %.*s\n", Scope->ProcName.Len, Scope->ProcName.Ptr );
+	log_fmt("\tEntering _ctx->parser: %.*s\n", Scope->ProcName.Len, Scope->ProcName.Ptr );
 #endif
 }
 
 void parser_pop(ParseContext* ctx)
 {
 #if 0 && GEN_BUILD_DEBUG
-	log_fmt("\tPopping  Context: %.*s\n", Scope->ProcName.Len, Scope->ProcName.Ptr );
+	log_fmt("\tPopping  _ctx->parser: %.*s\n", Scope->ProcName.Len, Scope->ProcName.Ptr );
 #endif
 	ctx->Scope = ctx->Scope->Prev;
 }
 
-StrBuilder parser_to_string(ParseContext ctx)
+StrBuilder parser_to_strbuilder(ParseContext ctx)
 {
-	StrBuilder result = strbuilder_make_reserve( GlobalAllocator, kilobytes(4) );
+	StrBuilder result = strbuilder_make_reserve( _ctx->Allocator_Temp, kilobytes(4) );
 
-	Token scope_start = ctx.Scope->Start;
+	Token scope_start = * ctx.Scope->Start;
 	Token last_valid  = ctx.Tokens.Idx >= array_num(ctx.Tokens.Arr) ? ctx.Tokens.Arr[array_num(ctx.Tokens.Arr) -1] : (* lex_current(& ctx.Tokens, true));
 
-	sptr        length  = scope_start.Length;
-	char const* current = scope_start.Text + length;
-	while ( current <= array_back( ctx.Tokens.Arr)->Text && *current != '\n' && length < 74 )
+	sptr        length  = scope_start.Text.Len;
+	char const* current = scope_start.Text.Ptr + length;
+	while ( current <= array_back( ctx.Tokens.Arr)->Text.Ptr && (* current) != '\n' && length < 74 )
 	{
 		current++;
 		length++;
 	}
 
-	Str scope_str = { length, scope_start.Text };
-	StrBuilder line = strbuilder_make_str( GlobalAllocator, scope_str );
+	Str scope_str = { scope_start.Text.Ptr, length };
+	StrBuilder line = strbuilder_make_str( _ctx->Allocator_Temp, scope_str );
 	strbuilder_append_fmt( & result, "\tScope    : %s\n", line );
 	strbuilder_free(& line);
 
-	sptr   dist            = (sptr)last_valid.Text - (sptr)scope_start.Text + 2;
+	sptr   dist            = (sptr)last_valid.Text.Ptr - (sptr)scope_start.Text.Ptr + 2;
 	sptr   length_from_err = dist;
 
-	Str err_str        = { length_from_err, last_valid.Text };
-	StrBuilder line_from_err = strbuilder_make_str( GlobalAllocator, err_str );
+	Str err_str        = { last_valid.Text.Ptr, length_from_err };
+	StrBuilder line_from_err = strbuilder_make_str( _ctx->Allocator_Temp, err_str );
 
 	if ( length_from_err < 100 )
 		strbuilder_append_fmt(& result, "\t(%d, %d):%*c\n", last_valid.Line, last_valid.Column, length_from_err, '^' );
@@ -20045,9 +19948,9 @@ StrBuilder parser_to_string(ParseContext ctx)
 	s32 level = 0;
 	do
 	{
-		if ( tok_is_valid(curr_scope->Name) )
+		if ( curr_scope->Name.Ptr )
 		{
-			strbuilder_append_fmt(& result, "\t%d: %s, AST Name: %.*s\n", level, curr_scope->ProcName.Ptr, curr_scope->Name.Length, curr_scope->Name.Text );
+			strbuilder_append_fmt(& result, "\t%d: %s, AST Name: %.*s\n", level, curr_scope->ProcName.Ptr, curr_scope->Name.Len, curr_scope->Name.Ptr );
 		}
 		else
 		{
@@ -20061,13 +19964,11 @@ StrBuilder parser_to_string(ParseContext ctx)
 	return result;
 }
 
-global ParseContext Context;
-
 bool lex__eat(TokArray* self, TokType type )
 {
 	if ( array_num(self->Arr) - self->Idx <= 0 )
 	{
-		log_failure( "No tokens left.\n%s", parser_to_string(Context) );
+		log_failure( "No tokens left.\n%s", parser_to_strbuilder(_ctx->parser) );
 		return false;
 	}
 
@@ -20084,17 +19985,17 @@ bool lex__eat(TokArray* self, TokType type )
 		Token tok = * lex_current( self, lex_skip_formatting );
 		log_failure( "Parse Error, TokArray::eat, Expected: ' %s ' not ' %.*s ' (%d, %d)`\n%s"
 			, toktype_to_str(type).Ptr
-			, at_idx.Length, at_idx.Text
+			, at_idx.Text.Len, at_idx.Text.Ptr
 			, tok.Line
 			, tok.Column
-			, parser_to_string(Context)
+			, parser_to_strbuilder(_ctx->parser)
 		);
 		GEN_DEBUG_TRAP();
 		return false;
 	}
 
 #if 0 && GEN_BUILD_DEBUG
-	log_fmt("Ate: %SB\n", self->Arr[Idx].to_string() );
+	log_fmt("Ate: %SB\n", self->Arr[Idx].to_strbuilder() );
 #endif
 
 	self->Idx ++;
@@ -20104,19 +20005,18 @@ bool lex__eat(TokArray* self, TokType type )
 internal
 void parser_init()
 {
-	Lexer_Tokens = array_init_reserve(Token, arena_allocator_info( & LexArena)
-		, ( LexAllocator_Size - sizeof( ArrayHeader ) ) / sizeof(Token)
+	_ctx->Lexer_Tokens = array_init_reserve(Token, arena_allocator_info( & _ctx->LexArena)
+		, ( _ctx->InitSize_LexArena - sizeof( ArrayHeader ) ) / sizeof(Token)
 	);
 
-	fixed_arena_init(& Lexer_defines_map_arena);
-	Lexer_defines = hashtable_init_reserve(Str, fixed_arena_allocator_info( & Lexer_defines_map_arena), 256 );
+	_ctx->Lexer_defines = hashtable_init_reserve(Str, _ctx->Allocator_DyanmicContainers, 256 );
 }
 
 internal
 void parser_deinit()
 {
 	Array(Token) null_array = { nullptr };
-	Lexer_Tokens = null_array;
+	_ctx->Lexer_Tokens = null_array;
 }
 
 #pragma region Helper Macros
@@ -20127,26 +20027,26 @@ bool _check_parse_args( Str def, char const* func_name )
 	if ( def.Len <= 0 )
 	{
 		log_failure( c_str_fmt_buf("gen::%s: length must greater than 0", func_name) );
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return false;
 	}
 	if ( def.Ptr == nullptr )
 	{
 		log_failure( c_str_fmt_buf("gen::%s: def was null", func_name) );
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return false;
 	}
 	return true;
 }
 
-#	define currtok_noskip (* lex_current( &  Context.Tokens, lex_dont_skip_formatting ))
-#	define currtok        (* lex_current( & Context.Tokens, lex_skip_formatting ))
-#	define peektok        (* lex_peek(Context.Tokens, lex_skip_formatting))
-#	define prevtok        (* lex_previous( Context.Tokens, lex_dont_skip_formatting))
-#	define nexttok		  (* lex_next( Context.Tokens, lex_skip_formatting ))
-#	define nexttok_noskip (* lex_next( Context.Tokens, lex_dont_skip_formatting))
-#	define eat( Type_ )   lex__eat( & Context.Tokens, Type_ )
-#	define left           ( array_num(Context.Tokens.Arr) - Context.Tokens.Idx )
+#	define currtok_noskip (* lex_current( &  _ctx->parser.Tokens, lex_dont_skip_formatting ))
+#	define currtok        (* lex_current( & _ctx->parser.Tokens, lex_skip_formatting ))
+#	define peektok        (* lex_peek(_ctx->parser.Tokens, lex_skip_formatting))
+#	define prevtok        (* lex_previous( _ctx->parser.Tokens, lex_dont_skip_formatting))
+#	define nexttok		  (* lex_next( _ctx->parser.Tokens, lex_skip_formatting ))
+#	define nexttok_noskip (* lex_next( _ctx->parser.Tokens, lex_dont_skip_formatting))
+#	define eat( Type_ )   lex__eat( & _ctx->parser.Tokens, Type_ )
+#	define left           ( array_num(_ctx->parser.Tokens.Arr) - _ctx->parser.Tokens.Idx )
 
 #if GEN_COMPILER_CPP
 #	define def_assign( ... ) { __VA_ARGS__ }
@@ -20164,9 +20064,10 @@ bool _check_parse_args( Str def, char const* func_name )
 #	define check_noskip( Type_ ) ( left && currtok_noskip.Type == Type_ )
 #	define check( Type_ )        ( left && currtok.Type        == Type_ )
 
-#	define push_scope()                                                                                  \
-	GEN_NS_PARSER StackNode scope = { nullptr, currtok_noskip, GEN_NS_PARSER NullToken, txt( __func__ ) }; \
-	parser_push( & GEN_NS_PARSER Context, & scope )
+#	define push_scope()                                                                                                         \
+	Str null_name = {};                                                                                                         \
+	StackNode scope = { nullptr, lex_current( &  _ctx->parser.Tokens, lex_dont_skip_formatting ), null_name, txt( __func__ ) }; \
+	parser_push( & _ctx->parser, & scope )
 
 #pragma endregion Helper Macros
 
@@ -20235,7 +20136,7 @@ constexpr bool parser_strip_formatting_dont_preserve_newlines = false;
 internal
 StrBuilder parser_strip_formatting( Str raw_text, bool preserve_newlines )
 {
-	StrBuilder content = strbuilder_make_reserve( GlobalAllocator, raw_text.Len );
+	StrBuilder content = strbuilder_make_reserve( _ctx->Allocator_Temp, raw_text.Len );
 
 	if ( raw_text.Len == 0 )
 		return content;
@@ -20478,13 +20379,13 @@ Code parse_array_decl()
 {
 	push_scope();
 
-	if ( check( Tok_Operator ) && currtok.Text[0] == '[' && currtok.Text[1] == ']' )
+	if ( check( Tok_Operator ) && currtok.Text.Ptr[0] == '[' && currtok.Text.Ptr[1] == ']' )
 	{
 		Code array_expr = untyped_str( txt(" ") );
 		eat( Tok_Operator );
 		// []
 
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return array_expr;
 	}
 
@@ -20495,15 +20396,15 @@ Code parse_array_decl()
 
 		if ( left == 0 )
 		{
-			log_failure( "Error, unexpected end of array declaration ( '[]' scope started )\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, unexpected end of array declaration ( '[]' scope started )\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
 		if ( currtok.Type == Tok_BraceSquare_Close )
 		{
-			log_failure( "Error, empty array expression in definition\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, empty array expression in definition\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -20514,22 +20415,22 @@ Code parse_array_decl()
 			eat( currtok.Type );
 		}
 
-		untyped_tok.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)untyped_tok.Text;
+		untyped_tok.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)untyped_tok.Text.Ptr;
 
 		Code array_expr = untyped_str( tok_to_str(untyped_tok) );
 		// [ <Content>
 
 		if ( left == 0 )
 		{
-			log_failure( "Error, unexpected end of array declaration, expected ]\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, unexpected end of array declaration, expected ]\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
 		if ( currtok.Type != Tok_BraceSquare_Close )
 		{
-			log_failure( "%s: Error, expected ] in array declaration, not %s\n%s", toktype_to_str( currtok.Type ), parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "%s: Error, expected ] in array declaration, not %s\n%s", toktype_to_str( currtok.Type ), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -20545,11 +20446,11 @@ Code parse_array_decl()
 			array_expr->Next = adjacent_arr_expr;
 		}
 
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return array_expr;
 	}
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return NullCode;
 }
 
@@ -20579,7 +20480,7 @@ CodeAttributes parse_attributes()
 			eat( Tok_Attribute_Close );
 			// [[ <Content> ]]
 
-			len = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )start.Text;
+			len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )start.Text.Ptr;
 		}
 		else if ( check( Tok_Decl_GNU_Attribute ) )
 		{
@@ -20598,7 +20499,7 @@ CodeAttributes parse_attributes()
 			eat( Tok_Capture_End );
 			// __attribute__(( <Content> ))
 
-			len = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )start.Text;
+			len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )start.Text.Ptr;
 		}
 		else if ( check( Tok_Decl_MSVC_Attribute ) )
 		{
@@ -20615,7 +20516,7 @@ CodeAttributes parse_attributes()
 			eat( Tok_Capture_End );
 			// __declspec( <Content> )
 
-			len = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )start.Text;
+			len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )start.Text.Ptr;
 		}
 		else if ( tok_is_attribute(currtok) )
 		{
@@ -20639,28 +20540,28 @@ CodeAttributes parse_attributes()
 				eat(Tok_Capture_End);
 			}
 
-			len = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )start.Text;
+			len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )start.Text.Ptr;
 			// <Attribute> ( ... )
 		}
 	}
 
 	if ( len > 0 )
 	{
-		Str attribute_txt = { len, start.Text };
-		parser_pop(& Context);
+		Str attribute_txt = { start.Text.Ptr, len };
+		parser_pop(& _ctx->parser);
 
 		StrBuilder name_stripped = parser_strip_formatting( attribute_txt, parser_strip_formatting_dont_preserve_newlines );
 
 		Code result     = make_code();
 		result->Type    = CT_PlatformAttributes;
-		result->Name    = get_cached_string( strbuilder_to_str(name_stripped) );
+		result->Name    = cache_str( strbuilder_to_str(name_stripped) );
 		result->Content = result->Name;
 		// result->Token   =
 
 		return ( CodeAttributes )result;
 	}
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return NullCode;
 }
 
@@ -20669,11 +20570,11 @@ Code parse_class_struct( TokType which, bool inplace_def )
 {
 	if ( which != Tok_Decl_Class && which != Tok_Decl_Struct )
 	{
-		log_failure( "Error, expected class or struct, not %s\n%s", toktype_to_str( which ), parser_to_string(Context) );
+		log_failure( "Error, expected class or struct, not %s\n%s", toktype_to_str( which ), parser_to_strbuilder(_ctx->parser) );
 		return InvalidCode;
 	}
 
-	Token name = { nullptr, 0, Tok_Invalid };
+	Token name = NullToken;
 
 	AccessSpec     access     = AccessSpec_Default;
 	CodeTypename   parent     = { nullptr };
@@ -20699,7 +20600,7 @@ Code parse_class_struct( TokType which, bool inplace_def )
 	if ( check( Tok_Identifier ) )
 	{
 		name = parse_identifier(nullptr);
-		Context.Scope->Name = name;
+		_ctx->parser.Scope->Name = name.Text;
 	}
 	// <ModuleFlags> <class/struct> <Attributes> <Name>
 
@@ -20799,7 +20700,7 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 
 		bool expects_function = false;
 
-		// Context.Scope->Start = currtok_noskip;
+		// _ctx->parser.Scope->Start = currtok_noskip;
 
 		if ( currtok_noskip.Type == Tok_Preprocess_Hash )
 			eat( Tok_Preprocess_Hash );
@@ -20811,7 +20712,7 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 			case Tok_Statement_End:
 			{
 				// TODO(Ed): Convert this to a general warning procedure
-				log_fmt("Dangling end statement found %SB\n", tok_to_string(currtok_noskip));
+				log_fmt("Dangling end statement found %SB\n", tok_to_strbuilder(currtok_noskip));
 				eat( Tok_Statement_End );
 				continue;
 			}
@@ -20893,7 +20794,7 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 			case Tok_Operator:
 				//if ( currtok.Text[0] != '~' )
 				//{
-				//	log_failure( "Operator token found in global body but not destructor unary negation\n%s", to_string(Context) );
+				//	log_failure( "Operator token found in global body but not destructor unary negation\n%s", to_strbuilder(_ctx->parser) );
 				//	return InvalidCode;
 				//}
 
@@ -21009,8 +20910,8 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 						break;
 
 						default:
-							log_failure( "Invalid specifier %s for variable\n%s", spec_to_str(spec), parser_to_string(Context) );
-							parser_pop(& Context);
+							log_failure( "Invalid specifier %S for variable\n%S", spec_to_str(spec), strbuilder_to_str( parser_to_strbuilder(_ctx->parser)) );
+							parser_pop(& _ctx->parser);
 							return InvalidCode;
 					}
 
@@ -21036,11 +20937,11 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 
 					if ( attributes )
 					{
-						StrBuilder fused = strbuilder_make_reserve( GlobalAllocator, attributes->Content.Len + more_attributes->Content.Len );
+						StrBuilder fused = strbuilder_make_reserve( _ctx->Allocator_Temp, attributes->Content.Len + more_attributes->Content.Len );
 						strbuilder_append_fmt( & fused, "%SB %SB", attributes->Content, more_attributes->Content );
 
-						Str attrib_name = { strbuilder_length(fused), fused };
-						attributes->Name    = get_cached_string( attrib_name );
+						Str attrib_name     = strbuilder_to_str(fused);
+						attributes->Name    = cache_str( attrib_name );
 						attributes->Content = attributes->Name;
 						// <Attributes> <Specifiers> <Attributes>
 					}
@@ -21048,7 +20949,7 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 					attributes = more_attributes;
 				}
 
-				if ( currtok.Type == Tok_Operator && currtok.Text[0] == '~' )
+				if ( currtok.Type == Tok_Operator && currtok.Text.Ptr[0] == '~' )
 				{
 					member = cast(Code, parser_parse_destructor( specifiers ));
 					// <Attribute> <Specifiers> ~<Name>()
@@ -21074,9 +20975,9 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 			case Tok_Type_int:
 			case Tok_Type_double:
 			{
-				if ( nexttok.Type == Tok_Capture_Start && name.Length && currtok.Type == Tok_Identifier )
+				if ( nexttok.Type == Tok_Capture_Start && name.Text.Len && currtok.Type == Tok_Identifier )
 				{
-					if ( c_str_compare_len( name.Text, currtok.Text, name.Length ) == 0 )
+					if ( c_str_compare_len( name.Text.Ptr, currtok.Text.Ptr, name.Text.Len ) == 0 )
 					{
 						member = cast(Code, parser_parse_constructor( specifiers ));
 						// <Attributes> <Specifiers> <Name>()
@@ -21095,8 +20996,8 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 
 						if ( member == Code_Invalid )
 						{
-							log_failure( "Failed to parse member\n%s", parser_to_string(Context) );
-							parser_pop(& Context);
+							log_failure( "Failed to parse member\n%s", parser_to_strbuilder(_ctx->parser) );
+							parser_pop(& _ctx->parser);
 							return InvalidCode;
 						}
 						continue;
@@ -21118,7 +21019,7 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 
 				while ( left && currtok.Type != Tok_BraceCurly_Close )
 				{
-					untyped_tok.Length = ( (sptr)currtok.Text + currtok.Length ) - (sptr)untyped_tok.Text;
+					untyped_tok.Text.Len = ( (sptr)currtok.Text.Ptr + currtok.Text.Len ) - (sptr)untyped_tok.Text.Ptr;
 					eat( currtok.Type );
 				}
 
@@ -21129,8 +21030,8 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 
 		if ( member == Code_Invalid )
 		{
-			log_failure( "Failed to parse member\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Failed to parse member\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -21139,7 +21040,7 @@ CodeBody parse_class_struct_body( TokType which, Token name )
 
 	eat( Tok_BraceCurly_Close );
 	// { <Members> }
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -21151,12 +21052,11 @@ CodeComment parse_comment()
 	CodeComment
 	result          = (CodeComment) make_code();
 	result->Type    = CT_Comment;
-	result->Content = get_cached_string( tok_to_str(currtok_noskip) );
-	result->Name    = result->Content;
+	result->Content = cache_str( tok_to_str(currtok_noskip) );
 	// result->Token   = currtok_noskip;
 	eat( Tok_Comment );
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -21167,7 +21067,7 @@ Code parse_complicated_definition( TokType which )
 
 	bool is_inplace = false;
 
-	TokArray tokens = Context.Tokens;
+	TokArray tokens = _ctx->parser.Tokens;
 
 	s32 idx         = tokens.Idx;
 	s32 level       = 0;
@@ -21188,7 +21088,7 @@ Code parse_complicated_definition( TokType which )
 		// Its a forward declaration only
 		Code result = parse_forward_or_definition( which, is_inplace );
 		// <class, enum, struct, or union> <Name>;
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return result;
 	}
 
@@ -21212,12 +21112,12 @@ Code parse_complicated_definition( TokType which )
 
 			Code result = parse_operator_function_or_variable( false, NullCode, NullCode );
 			// <Attributes> <Specifiers> <ReturnType/ValueType> <operator <Op>, or Name> ...
-			parser_pop(& Context);
+			parser_pop(& _ctx->parser);
 			return result;
 		}
 
-		log_failure( "Unsupported or bad member definition after %s declaration\n%s", toktype_to_str(which), parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Unsupported or bad member definition after %s declaration\n%s", toktype_to_str(which), parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 	if ( tok.Type == Tok_Identifier )
@@ -21249,7 +21149,7 @@ Code parse_complicated_definition( TokType which )
 			// <enum> <class> <type_identifier> : <identifier>;
 			ok_to_parse = true;
 			Code result = cast(Code, parser_parse_enum( ! parser_inplace_def));
-			parser_pop(& Context);
+			parser_pop(& _ctx->parser);
 			return result;
 		}
 		else if ( is_indirection )
@@ -21261,14 +21161,14 @@ Code parse_complicated_definition( TokType which )
 
 		if ( ! ok_to_parse )
 		{
-			log_failure( "Unsupported or bad member definition after %s declaration\n%s", toktype_to_str(which), parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Unsupported or bad member definition after %s declaration\n%s", toktype_to_str(which), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
 		Code result = parse_operator_function_or_variable( false, NullCode, NullCode );
 		// <Attributes> <Specifiers> <ReturnType/ValueType> <operator <Op>, or Name> ...
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return result;
 	}
 	else if ( tok.Type >= Tok_Type_Unsigned && tok.Type <= Tok_Type_MS_W64 )
@@ -21280,8 +21180,8 @@ Code parse_complicated_definition( TokType which )
 			&&	( tokens.Arr[idx - 4].Type != which))
 		)
 		{
-			log_failure( "Unsupported or bad member definition after %s declaration\n%s", toktype_to_str(which), parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Unsupported or bad member definition after %s declaration\n%s", toktype_to_str(which), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -21289,7 +21189,7 @@ Code parse_complicated_definition( TokType which )
 		// <enum>         <type_identifier> : <identifier>;
 		// <enum> <class> <type_identifier> : <identifier>;
 		Code result = cast(Code, parser_parse_enum( ! parser_inplace_def));
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return result;
 	}
 	else if ( tok.Type == Tok_BraceCurly_Close )
@@ -21297,7 +21197,7 @@ Code parse_complicated_definition( TokType which )
 		// Its a definition
 		Code result = parse_forward_or_definition( which, is_inplace );
 		// <which> { ... };
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return result;
 	}
 	else if ( tok.Type == Tok_BraceSquare_Close )
@@ -21305,13 +21205,13 @@ Code parse_complicated_definition( TokType which )
 		// Its an array definition
 		Code result = parse_operator_function_or_variable( false, NullCode, NullCode );
 		// <which> <type_identifier> <identifier> [ ... ];
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return result;
 	}
 	else
 	{
-		log_failure( "Unsupported or bad member definition after %s declaration\n%SB", toktype_to_str(which).Ptr, parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Unsupported or bad member definition after %s declaration\n%SB", toktype_to_str(which).Ptr, parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 }
@@ -21329,38 +21229,38 @@ CodeDefine parse_define()
 
 	if ( ! check( Tok_Identifier ) )
 	{
-		log_failure( "Error, expected identifier after #define\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Error, expected identifier after #define\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
-	Context.Scope->Name = currtok;
-	define->Name = get_cached_string( tok_to_str(currtok) );
+	_ctx->parser.Scope->Name = currtok.Text;
+	define->Name = cache_str( tok_to_str(currtok) );
 	eat( Tok_Identifier );
 	// #define <Name>
 
 	if ( ! check( Tok_Preprocess_Content ))
 	{
-		log_failure( "Error, expected content after #define %s\n%s", define->Name, parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Error, expected content after #define %s\n%s", define->Name, parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
-	if ( currtok.Length == 0 )
+	if ( currtok.Text.Len == 0 )
 	{
-		define->Content = get_cached_string( tok_to_str(currtok) );
+		define->Content = cache_str( tok_to_str(currtok) );
 		eat( Tok_Preprocess_Content );
 		// #define <Name> <Content>
 
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return define;
 	}
 
-	define->Content = get_cached_string( strbuilder_to_str( parser_strip_formatting( tok_to_str(currtok), parser_strip_formatting_dont_preserve_newlines )) );
+	define->Content = cache_str( strbuilder_to_str( parser_strip_formatting( tok_to_str(currtok), parser_strip_formatting_dont_preserve_newlines )) );
 	eat( Tok_Preprocess_Content );
 	// #define <Name> <Content>
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return define;
 }
 
@@ -21376,8 +21276,8 @@ Code parse_assignment_expression()
 
 	if ( currtok.Type == Tok_Statement_End && currtok.Type != Tok_Comma )
 	{
-		log_failure( "Expected expression after assignment operator\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Expected expression after assignment operator\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
@@ -21396,8 +21296,8 @@ Code parse_assignment_expression()
 		eat( currtok.Type );
 	}
 
-	expr_tok.Length = ( ( sptr )currtok.Text + currtok.Length ) - ( sptr )expr_tok.Text - 1;
-	expr            = untyped_str( tok_to_str(expr_tok) );
+	expr_tok.Text.Len = ( ( sptr )currtok.Text.Ptr + currtok.Text.Len ) - ( sptr )expr_tok.Text.Ptr - 1;
+	expr              = untyped_str( tok_to_str(expr_tok) );
 	// = <Expression>
 	return expr;
 }
@@ -21428,7 +21328,7 @@ Code parse_forward_or_definition( TokType which, bool is_inplace )
 		default:
 			log_failure( "Error, wrong token type given to parse_complicated_definition "
 				"(only supports class, enum, struct, union) \n%s"
-				, parser_to_string(Context) );
+				, parser_to_strbuilder(_ctx->parser) );
 
 			return InvalidCode;
 	}
@@ -21470,12 +21370,12 @@ CodeFn parse_function_after_name(
 		body = cast(CodeBody, parse_function_body());
 		if ( cast(Code, body) == Code_Invalid )
 		{
-			parser_pop(& Context);
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 		// <Attributes> <Specifiers> <ReturnType> <Name> ( <Paraemters> ) <Specifiers> { <Body> }
 	}
-	else if ( check(Tok_Operator) && currtok.Text[0] == '=' )
+	else if ( check(Tok_Operator) && currtok.Text.Ptr[0] == '=' )
 	{
 		eat(Tok_Operator);
 		specifiers_append(specifiers, Spec_Pure );
@@ -21501,12 +21401,12 @@ CodeFn parse_function_after_name(
 	}
 
 	StrBuilder
-	name_stripped = strbuilder_make_str( GlobalAllocator, tok_to_str(name) );
+	name_stripped = strbuilder_make_str( _ctx->Allocator_Temp, tok_to_str(name) );
 	strip_space(name_stripped);
 
 	CodeFn
 	result              = (CodeFn) make_code();
-	result->Name        = get_cached_string( strbuilder_to_str(name_stripped) );
+	result->Name        = cache_str( strbuilder_to_str(name_stripped) );
 	result->ModuleFlags = mflags;
 
 	if ( body )
@@ -21519,8 +21419,8 @@ CodeFn parse_function_after_name(
 
 			default:
 			{
-				log_failure("Body must be either of Function_Body or Untyped type, %s\n%s", code_debug_str(body), parser_to_string(Context));
-				parser_pop(& Context);
+				log_failure("Body must be either of Function_Body or Untyped type, %s\n%s", code_debug_str(body), parser_to_strbuilder(_ctx->parser));
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 			}
 		}
@@ -21547,7 +21447,7 @@ CodeFn parse_function_after_name(
 	if ( inline_cmt )
 		result->InlineCmt = inline_cmt;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -21579,17 +21479,17 @@ Code parse_function_body()
 
 	Token past = prevtok;
 
-	s32 len = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)start.Text;
+	s32 len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)start.Text.Ptr;
 
 	if ( len > 0 )
 	{
-		Str str = { len, start.Text };
+		Str str = { start.Text.Ptr, len };
 		body_append( result, cast(Code, def_execution( str )) );
 	}
 
 	eat( Tok_BraceCurly_Close );
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return cast(Code, result);
 }
 
@@ -21617,7 +21517,7 @@ CodeBody parse_global_nspace( CodeType which )
 
 		bool expects_function = false;
 
-		// Context.Scope->Start = currtok_noskip;
+		// _ctx->parser.Scope->Start = currtok_noskip;
 
 		if ( currtok_noskip.Type == Tok_Preprocess_Hash )
 			eat( Tok_Preprocess_Hash );
@@ -21628,15 +21528,15 @@ CodeBody parse_global_nspace( CodeType which )
 		{
 			case Tok_Comma:
 			{
-				log_failure("Dangling comma found: %SB\nContext:\n%SB", tok_to_string(currtok), parser_to_string(Context));
-				parser_pop( & Context);
+				log_failure("Dangling comma found: %SB\nContext:\n%SB", tok_to_strbuilder(currtok), parser_to_strbuilder(_ctx->parser));
+				parser_pop( & _ctx->parser);
 				return InvalidCode;
 			}
 			break;
 			case Tok_Statement_End:
 			{
 				// TODO(Ed): Convert this to a general warning procedure
-				log_fmt("Dangling end statement found %SB\n", tok_to_string(currtok_noskip));
+				log_fmt("Dangling end statement found %SB\n", tok_to_strbuilder(currtok_noskip));
 				eat( Tok_Statement_End );
 				continue;
 			}
@@ -21662,7 +21562,7 @@ CodeBody parse_global_nspace( CodeType which )
 
 			case Tok_Decl_Extern_Linkage:
 				if ( which == CT_Extern_Linkage_Body )
-					log_failure( "Nested extern linkage\n%s", parser_to_string(Context) );
+					log_failure( "Nested extern linkage\n%s", parser_to_strbuilder(_ctx->parser) );
 
 				member = cast(Code, parser_parse_extern_link());
 				// extern "..." { ... }
@@ -21755,7 +21655,7 @@ CodeBody parse_global_nspace( CodeType which )
 
 			case Tok_Module_Export: {
 				if ( which == CT_Export_Body )
-					log_failure( "Nested export declaration\n%s", parser_to_string(Context) );
+					log_failure( "Nested export declaration\n%s", parser_to_strbuilder(_ctx->parser) );
 
 				member = cast(Code, parser_parse_export_body());
 				// export { ... }
@@ -21806,14 +21706,14 @@ CodeBody parse_global_nspace( CodeType which )
 					{
 						case Spec_Constexpr:
 						case Spec_Constinit:
-						case Spec_External_Linkage:
 						case Spec_ForceInline:
 						case Spec_Global:
 						case Spec_GB_Global:
-						case Spec_Inline:
-						case Spec_GB_Inline:
+						case Spec_External_Linkage:
 						case Spec_Internal_Linkage:
 						case Spec_GB_Internal:
+						case Spec_Inline:
+						case Spec_GB_Inline:
 						case Spec_Mutable:
 						case Spec_NeverInline:
 						case Spec_Static:
@@ -21831,8 +21731,8 @@ CodeBody parse_global_nspace( CodeType which )
 						default:
 							Str spec_str = spec_to_str(spec);
 
-							log_failure( "Invalid specifier %.*s for variable\n%s", spec_str.Len, spec_str, parser_to_string(Context) );
-							parser_pop(& Context);
+							log_failure( "Invalid specifier %S for variable\n%S", spec_str, strbuilder_to_str( parser_to_strbuilder(_ctx->parser)) );
+							parser_pop(& _ctx->parser);
 							return InvalidCode;
 					}
 
@@ -21873,16 +21773,16 @@ CodeBody parse_global_nspace( CodeType which )
 					}
 
 					bool found_operator_cast_outside_class_implmentation = false;
-					s32  idx = Context.Tokens.Idx;
+					s32  idx = _ctx->parser.Tokens.Idx;
 
-					for ( ; idx < array_num(Context.Tokens.Arr); idx++ )
+					for ( ; idx < array_num(_ctx->parser.Tokens.Arr); idx++ )
 					{
-						Token tok = Context.Tokens.Arr[ idx ];
+						Token tok = _ctx->parser.Tokens.Arr[ idx ];
 
 						if ( tok.Type == Tok_Identifier )
 						{
 							idx++;
-							tok = Context.Tokens.Arr[ idx ];
+							tok = _ctx->parser.Tokens.Arr[ idx ];
 							if ( tok.Type == Tok_Access_StaticSymbol )
 								continue;
 
@@ -21914,8 +21814,8 @@ CodeBody parse_global_nspace( CodeType which )
 
 						if ( member == Code_Invalid )
 						{
-							log_failure( "Failed to parse member\n%s", parser_to_string(Context) );
-							parser_pop(& Context);
+							log_failure( "Failed to parse member\n%s", parser_to_strbuilder(_ctx->parser) );
+							parser_pop(& _ctx->parser);
 							return InvalidCode;
 						}
 						goto Member_Resolved_To_Lone_Macro;
@@ -21933,8 +21833,8 @@ CodeBody parse_global_nspace( CodeType which )
 	Member_Resolved_To_Lone_Macro:
 		if ( member == Code_Invalid )
 		{
-			log_failure( "Failed to parse member\nToken: %SB\nContext:\n%SB", tok_to_string(currtok_noskip), parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Failed to parse member\nToken: %SB\nContext:\n%SB", tok_to_strbuilder(currtok_noskip), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -21946,7 +21846,7 @@ CodeBody parse_global_nspace( CodeType which )
 		eat( Tok_BraceCurly_Close );
 		// { <Body> }
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -21967,25 +21867,25 @@ Code parse_global_nspace_constructor_destructor( CodeSpecifiers specifiers )
 
 		TODO(Ed): We could fix this by attempting to parse a type, but we would have to have a way to have it soft fail and rollback.
 	*/
-	TokArray tokens = Context.Tokens;
+	TokArray tokens = _ctx->parser.Tokens;
 
 	s32   idx = tokens.Idx;
 	Token nav = tokens.Arr[ idx ];
 	for ( ; idx < array_num(tokens.Arr); idx++, nav = tokens.Arr[ idx ] )
 	{
-		if ( nav.Text[0] == '<' )
+		if ( nav.Text.Ptr[0] == '<' )
 		{
 			// Skip templated expressions as they mey have expressions with the () operators
 			s32 capture_level  = 0;
 			s32 template_level = 0;
 			for ( ; idx < array_num(tokens.Arr); idx++, nav = tokens.Arr[idx] )
 			{
-				if (nav.Text[ 0 ] == '<')
+				if (nav.Text.Ptr[ 0 ] == '<')
 					++ template_level;
 
-				if (nav.Text[ 0 ] == '>')
+				if (nav.Text.Ptr[ 0 ] == '>')
 					-- template_level;
-				if (nav.Type == Tok_Operator && nav.Text[1] == '>')
+				if (nav.Type == Tok_Operator && nav.Text.Ptr[1] == '>')
 					-- template_level;
 
 				if ( nav.Type == Tok_Capture_Start)
@@ -22020,7 +21920,7 @@ Code parse_global_nspace_constructor_destructor( CodeSpecifiers specifiers )
 	// <Attributes> <Specifiers> ... <Identifier>
 
 	bool possible_destructor = false;
-	if ( tok_left.Type == Tok_Operator && tok_left.Text[0] == '~')
+	if ( tok_left.Type == Tok_Operator && tok_left.Text.Ptr[0] == '~')
 	{
 		possible_destructor = true;
 		-- idx;
@@ -22039,12 +21939,12 @@ Code parse_global_nspace_constructor_destructor( CodeSpecifiers specifiers )
 	s32 template_level = 0;
 	while ( idx != tokens.Idx )
 	{
-		if (tok_left.Text[ 0 ] == '<')
+		if (tok_left.Text.Ptr[ 0 ] == '<')
 			++ template_level;
 
-		if (tok_left.Text[ 0 ] == '>')
+		if (tok_left.Text.Ptr[ 0 ] == '>')
 			-- template_level;
-		if (tok_left.Type == Tok_Operator && tok_left.Text[1] == '>')
+		if (tok_left.Type == Tok_Operator && tok_left.Text.Ptr[1] == '>')
 			-- template_level;
 
 		if ( template_level != 0 && tok_left.Type == Tok_Capture_Start)
@@ -22060,7 +21960,7 @@ Code parse_global_nspace_constructor_destructor( CodeSpecifiers specifiers )
 		tok_left = tokens.Arr[idx];
 	}
 
-	bool is_same = c_str_compare_len( tok_right.Text, tok_left.Text, tok_right.Length ) == 0;
+	bool is_same = c_str_compare_len( tok_right.Text.Ptr, tok_left.Text.Ptr, tok_right.Text.Len ) == 0;
 	if (tok_left.Type == Tok_Identifier && is_same)
 	{
 		// We have found the pattern we desired
@@ -22087,7 +21987,7 @@ Token parse_identifier( bool* possible_member_function )
 	push_scope();
 
 	Token name = currtok;
-	Context.Scope->Name = name;
+	_ctx->parser.Scope->Name = name.Text;
 	eat( Tok_Identifier );
 	// <Name>
 
@@ -22099,50 +21999,50 @@ Token parse_identifier( bool* possible_member_function )
 		eat( Tok_Access_StaticSymbol );
 		// <Qualifier Name> <Template Args> ::
 
-		Token invalid = { nullptr, 0, Tok_Invalid };
+		Token invalid = NullToken;
 		if ( left == 0 )
 		{
-			log_failure( "Error, unexpected end of static symbol identifier\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, unexpected end of static symbol identifier\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return invalid;
 		}
 
-		if ( currtok.Type == Tok_Operator && currtok.Text[0] == '~' )
+		if ( currtok.Type == Tok_Operator && currtok.Text.Ptr[0] == '~' )
 		{
-			bool is_destructor = str_are_equal( Context.Scope->Prev->ProcName, txt("parser_parse_destructor"));
+			bool is_destructor = str_are_equal( _ctx->parser.Scope->Prev->ProcName, txt("parser_parse_destructor"));
 			if (is_destructor)
 			{
-				name.Length = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )name.Text;
-				parser_pop(& Context);
+				name.Text.Len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )name.Text.Ptr;
+				parser_pop(& _ctx->parser);
 				return name;
 			}
 
-			log_failure( "Error, had a ~ operator after %SB but not a destructor\n%s", toktype_to_str( prevtok.Type ), parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, had a ~ operator after %SB but not a destructor\n%s", toktype_to_str( prevtok.Type ), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return invalid;
 		}
 
-		if ( currtok.Type == Tok_Operator && currtok.Text[0] == '*' && currtok.Length == 1 )
+		if ( currtok.Type == Tok_Operator && currtok.Text.Ptr[0] == '*' && currtok.Text.Len == 1 )
 		{
 			if ( possible_member_function )
 				*possible_member_function = true;
 
 			else
 			{
-				log_failure( "Found a member function pointer identifier but the parsing context did not expect it\n%s", parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Found a member function pointer identifier but the parsing context did not expect it\n%s", parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return invalid;
 			}
 		}
 
 		if ( currtok.Type != Tok_Identifier )
 		{
-			log_failure( "Error, expected static symbol identifier, not %s\n%s", toktype_to_str( currtok.Type ), parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, expected static symbol identifier, not %s\n%s", toktype_to_str( currtok.Type ), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return invalid;
 		}
 
-		name.Length = ( (sptr)currtok.Text + currtok.Length ) - (sptr)name.Text;
+		name.Text.Len = ( (sptr)currtok.Text.Ptr + currtok.Text.Len ) - (sptr)name.Text.Ptr;
 		eat( Tok_Identifier );
 		// <Qualifier Name> <Template Args> :: <Name>
 
@@ -22151,7 +22051,7 @@ Token parse_identifier( bool* possible_member_function )
 	}
 	// <Qualifier Name> <Template Args> :: <Name> <Template Args> ...
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return name;
 }
 
@@ -22168,17 +22068,17 @@ CodeInclude parse_include()
 
 	if ( ! check( Tok_String ))
 	{
-		log_failure( "Error, expected include string after #include\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Error, expected include string after #include\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
-	Context.Scope->Name = currtok;
-	include->Content = get_cached_string( tok_to_str(currtok) );
+	_ctx->parser.Scope->Name = currtok.Text;
+	include->Content = cache_str( tok_to_str(currtok) );
 	eat( Tok_String );
 	// #include <Path> or "Path"
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return include;
 }
 
@@ -22204,7 +22104,7 @@ CodeOperator parse_operator_after_ret_type(
 				eat( Tok_Access_StaticSymbol );
 		}
 
-		nspace.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)nspace.Text;
+		nspace.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)nspace.Text.Ptr;
 	}
 	// <ExportFlag> <Attributes> <Specifiers> <ReturnType> <Qualifier::...>
 
@@ -22216,24 +22116,24 @@ CodeOperator parse_operator_after_ret_type(
 		&& currtok.Type != Tok_Ampersand
 		&& currtok.Type != Tok_Ampersand_DBL )
 	{
-		log_failure( "Expected operator after 'operator' keyword\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Expected operator after 'operator' keyword\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
-	Context.Scope->Name = currtok;
+	_ctx->parser.Scope->Name = currtok.Text;
 
 	bool was_new_or_delete = false;
 
 	Operator op = Op_Invalid;
-	switch ( currtok.Text[0] )
+	switch ( currtok.Text.Ptr[0] )
 	{
 		case '+':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_Add;
 
-			else if ( currtok.Text[1] == '+' )
+			else if ( currtok.Text.Ptr[1] == '+' )
 				op = Op_Increment;
 
 			else
@@ -22242,9 +22142,9 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '-':
 		{
-			if ( currtok.Text[1] == '>' )
+			if ( currtok.Text.Ptr[1] == '>' )
 			{
-				if ( currtok.Text[2] == '*' )
+				if ( currtok.Text.Ptr[2] == '*' )
 					op = Op_MemberOfPointer;
 
 				else
@@ -22253,7 +22153,7 @@ CodeOperator parse_operator_after_ret_type(
 				break;
 			}
 
-			else if ( currtok.Text[1] == '=' )
+			else if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_Subtract;
 
 			else
@@ -22262,7 +22162,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '*':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_Multiply;
 
 			else
@@ -22284,7 +22184,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '/':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_Divide;
 
 			else
@@ -22293,7 +22193,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '%':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_Modulo;
 
 			else
@@ -22302,10 +22202,10 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '&':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_BAnd;
 
-			else if ( currtok.Text[1] == '&' )
+			else if ( currtok.Text.Ptr[1] == '&' )
 				op = Op_LAnd;
 
 			else
@@ -22319,10 +22219,10 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '|':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_BOr;
 
-			else if ( currtok.Text[1] == '|' )
+			else if ( currtok.Text.Ptr[1] == '|' )
 				op = Op_LOr;
 
 			else
@@ -22331,7 +22231,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '^':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_Assign_BXOr;
 
 			else
@@ -22345,7 +22245,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '!':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_LNot;
 
 			else
@@ -22354,7 +22254,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '=':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_LEqual;
 
 			else
@@ -22363,12 +22263,12 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '<':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_LesserEqual;
 
-			else if ( currtok.Text[1] == '<' )
+			else if ( currtok.Text.Ptr[1] == '<' )
 			{
-				if ( currtok.Text[2] == '=' )
+				if ( currtok.Text.Ptr[2] == '=' )
 					op = Op_Assign_LShift;
 
 				else
@@ -22380,12 +22280,12 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '>':
 		{
-			if ( currtok.Text[1] == '=' )
+			if ( currtok.Text.Ptr[1] == '=' )
 				op = Op_GreaterEqual;
 
-			else if ( currtok.Text[1] == '>' )
+			else if ( currtok.Text.Ptr[1] == '>' )
 			{
-				if ( currtok.Text[2] == '=' )
+				if ( currtok.Text.Ptr[2] == '=' )
 					op = Op_Assign_RShift;
 
 				else
@@ -22397,7 +22297,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '(':
 		{
-			if ( currtok.Text[1] == ')' )
+			if ( currtok.Text.Ptr[1] == ')' )
 				op = Op_FunctionCall;
 
 			else
@@ -22406,7 +22306,7 @@ CodeOperator parse_operator_after_ret_type(
 		break;
 		case '[':
 		{
-			if ( currtok.Text[1] == ']' )
+			if ( currtok.Text.Ptr[1] == ']' )
 				op = Op_Subscript;
 
 			else
@@ -22417,19 +22317,19 @@ CodeOperator parse_operator_after_ret_type(
 		{
 			Str c_str_new    = operator_to_str(Op_New);
 			Str c_str_delete = operator_to_str(Op_Delete);
-			if ( c_str_compare_len( currtok.Text, c_str_new.Ptr, max(c_str_new.Len - 1, currtok.Length)) == 0)
+			if ( c_str_compare_len( currtok.Text.Ptr, c_str_new.Ptr, max(c_str_new.Len - 1, currtok.Text.Len)) == 0)
 			{
 				op = Op_New;
 				eat( Tok_Identifier );
 				was_new_or_delete = true;
 
-				s32 idx = Context.Tokens.Idx + 1;
+				s32 idx = _ctx->parser.Tokens.Idx + 1;
 				{
-					while ( Context.Tokens.Arr[ idx ].Type == Tok_NewLine )
+					while ( _ctx->parser.Tokens.Arr[ idx ].Type == Tok_NewLine )
 						idx++;
 				}
-				Token next = Context.Tokens.Arr[idx];
-				if ( currtok.Type == Tok_Operator && c_str_compare_len(currtok.Text, "[]", 2) == 0)
+				Token next = _ctx->parser.Tokens.Arr[idx];
+				if ( currtok.Type == Tok_Operator && c_str_compare_len(currtok.Text.Ptr, "[]", 2) == 0)
 				{
 					eat(Tok_Operator);
 					op = Op_NewArray;
@@ -22441,19 +22341,19 @@ CodeOperator parse_operator_after_ret_type(
 					op = Op_NewArray;
 				}
 			}
-			else if ( c_str_compare_len( currtok.Text, c_str_delete.Ptr, max(c_str_delete.Len - 1, currtok.Length )) == 0)
+			else if ( c_str_compare_len( currtok.Text.Ptr, c_str_delete.Ptr, max(c_str_delete.Len - 1, currtok.Text.Len )) == 0)
 			{
 				op = Op_Delete;
 				eat(Tok_Identifier);
 				was_new_or_delete = true;
 
-				s32 idx = Context.Tokens.Idx + 1;
+				s32 idx = _ctx->parser.Tokens.Idx + 1;
 				{
-					while ( Context.Tokens.Arr[ idx ].Type == Tok_NewLine )
+					while ( _ctx->parser.Tokens.Arr[ idx ].Type == Tok_NewLine )
 						idx++;
 				}
-				Token next = Context.Tokens.Arr[idx];
-				if ( currtok.Type == Tok_Operator && c_str_compare_len(currtok.Text, "[]", 2) == 0)
+				Token next = _ctx->parser.Tokens.Arr[idx];
+				if ( currtok.Type == Tok_Operator && c_str_compare_len(currtok.Text.Ptr, "[]", 2) == 0)
 				{
 					eat(Tok_Operator);
 					op = Op_DeleteArray;
@@ -22469,8 +22369,8 @@ CodeOperator parse_operator_after_ret_type(
 			{
 				if ( op == Op_Invalid )
 				{
-					log_failure( "Invalid operator '%s'\n%s", prevtok.Text, parser_to_string(Context) );
-					parser_pop(& Context);
+					log_failure( "Invalid operator '%s'\n%s", prevtok.Text, parser_to_strbuilder(_ctx->parser) );
+					parser_pop(& _ctx->parser);
 					return InvalidCode;
 				}
 			}
@@ -22479,8 +22379,8 @@ CodeOperator parse_operator_after_ret_type(
 
 	if ( op == Op_Invalid )
 	{
-		log_failure( "Invalid operator '%s'\n%s", currtok.Text, parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Invalid operator '%s'\n%s", currtok.Text, parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
@@ -22517,7 +22417,7 @@ CodeOperator parse_operator_after_ret_type(
 		body = cast(CodeBody, parse_function_body());
 		if ( cast(Code, body) == Code_Invalid )
 		{
-			parser_pop(& Context);
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 		// <ExportFlag> <Attributes> <Specifiers> <ReturnType> <Qualifier::...> operator <Op> ( <Parameters> ) <Specifiers> { ... }
@@ -22539,7 +22439,7 @@ CodeOperator parse_operator_after_ret_type(
 	if ( inline_cmt )
 		result->InlineCmt = inline_cmt;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -22557,7 +22457,7 @@ Code parse_operator_function_or_variable( bool expects_function, CodeAttributes 
 	{
 		// Were dealing with a lone macro after attributes/specifiers, there was a end statement ';' after.
 		result = parse_simple_preprocess( Tok_Preprocess_Macro, parser_consume_braces );
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return result;
 		// <Attributes> <Specifiers> <Macro>
 	}
@@ -22568,21 +22468,21 @@ Code parse_operator_function_or_variable( bool expects_function, CodeAttributes 
 
 	if ( type == InvalidCode )
 	{
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
 	bool found_operator = false;
-	s32  idx            = Context.Tokens.Idx;
+	s32  idx            = _ctx->parser.Tokens.Idx;
 
-	for ( ; idx < array_num(Context.Tokens.Arr); idx++ )
+	for ( ; idx < array_num(_ctx->parser.Tokens.Arr); idx++ )
 	{
-		Token tok = Context.Tokens.Arr[ idx ];
+		Token tok = _ctx->parser.Tokens.Arr[ idx ];
 
 		if ( tok.Type == Tok_Identifier )
 		{
 			idx++;
-			tok = Context.Tokens.Arr[ idx ];
+			tok = _ctx->parser.Tokens.Arr[ idx ];
 			if ( tok.Type == Tok_Access_StaticSymbol )
 				continue;
 
@@ -22604,7 +22504,7 @@ Code parse_operator_function_or_variable( bool expects_function, CodeAttributes 
 	else
 	{
 		Token name = parse_identifier(nullptr);
-		Context.Scope->Name = name;
+		_ctx->parser.Scope->Name = name.Text;
 
 		bool detected_capture = check( Tok_Capture_Start );
 
@@ -22612,7 +22512,7 @@ Code parse_operator_function_or_variable( bool expects_function, CodeAttributes 
 		//                  (         350.0f    ,         <---  Could be the scenario
 		// Example : <Capture_Start> <Value> <Comma>
 		//                 idx         +1      +2
-		bool detected_comma = Context.Tokens.Arr[ Context.Tokens.Idx + 2 ].Type == Tok_Comma;
+		bool detected_comma = _ctx->parser.Tokens.Arr[ _ctx->parser.Tokens.Idx + 2 ].Type == Tok_Comma;
 		if ( detected_capture && ! detected_comma )
 		{
 			// Dealing with a function
@@ -22623,8 +22523,8 @@ Code parse_operator_function_or_variable( bool expects_function, CodeAttributes 
 		{
 			if ( expects_function )
 			{
-				log_failure( "Expected function declaration (consteval was used)\n%s", parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Expected function declaration (consteval was used)\n%s", parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 			}
 
@@ -22634,7 +22534,7 @@ Code parse_operator_function_or_variable( bool expects_function, CodeAttributes 
 		}
 	}
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -22651,18 +22551,18 @@ CodePragma parse_pragma()
 
 	if ( ! check( Tok_Preprocess_Content ))
 	{
-		log_failure( "Error, expected content after #pragma\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Error, expected content after #pragma\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
-	Context.Scope->Name = currtok;
+	_ctx->parser.Scope->Name = currtok.Text;
 
-	pragma->Content = get_cached_string( tok_to_str(currtok) );
+	pragma->Content = cache_str( tok_to_str(currtok) );
 	eat( Tok_Preprocess_Content );
 	// #pragma <Content>
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return pragma;
 }
 
@@ -22677,7 +22577,7 @@ CodeParams parse_params( bool use_template_capture )
 
 	else
 	{
-		if ( check( Tok_Operator ) && currtok.Text[ 0 ] == '<' )
+		if ( check( Tok_Operator ) && currtok.Text.Ptr[ 0 ] == '<' )
 			eat( Tok_Operator );
 		// <
 	}
@@ -22686,14 +22586,14 @@ CodeParams parse_params( bool use_template_capture )
 	{
 		eat( Tok_Capture_End );
 		// )
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return NullCode;
 	}
-	else if ( check( Tok_Operator ) && currtok.Text[ 0 ] == '>' )
+	else if ( check( Tok_Operator ) && currtok.Text.Ptr[ 0 ] == '>' )
 	{
 		eat( Tok_Operator );
 		// >
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return NullCode;
 	}
 
@@ -22708,14 +22608,14 @@ CodeParams parse_params( bool use_template_capture )
 		eat( Tok_Varadic_Argument );
 		// ( or <  ...
 
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return param_varadic;
 		// ( ... )
 		// or < ... >
 	}
 
 	#define CheckEndParams() \
-		(use_template_capture ? (currtok.Text[ 0 ] != '>') : (currtok.Type != Tok_Capture_End))
+		(use_template_capture ? (currtok.Text.Ptr[ 0 ] != '>') : (currtok.Type != Tok_Capture_End))
 
 	// Ex: Unreal has this type of macro:                 vvvvvvvvv
 	// COREUOBJECT_API void CallFunction( FFrame& Stack, RESULT_DECL, UFunction* Function );
@@ -22731,7 +22631,7 @@ CodeParams parse_params( bool use_template_capture )
 		type = parser_parse_type( use_template_capture, nullptr );
 		if ( cast(Code, type) == Code_Invalid )
 		{
-			parser_pop(& Context);
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 		// ( <Macro> <ValueType>
@@ -22755,7 +22655,7 @@ CodeParams parse_params( bool use_template_capture )
 		// In template captures you can have a typename have direct assignment without a name
 		// typename = typename ...
 		// Which would result in a static value type from a struct expansion (traditionally)
-		if ( ( name.Text || use_template_capture ) && bitfield_is_equal( u32, currtok.Flags, TF_Assign ) )
+		if ( ( name.Text.Ptr || use_template_capture ) && bitfield_is_equal( u32, currtok.Flags, TF_Assign ) )
 		{
 			eat( Tok_Operator );
 			// ( <Macro> <ValueType> <Name> =
@@ -22764,8 +22664,8 @@ CodeParams parse_params( bool use_template_capture )
 
 			if ( currtok.Type == Tok_Comma )
 			{
-				log_failure( "Expected value after assignment operator\n%s.", parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Expected value after assignment operator\n%s.", parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 			}
 
@@ -22773,12 +22673,12 @@ CodeParams parse_params( bool use_template_capture )
 			s32 template_level = 0;
 			while ( (left && ( currtok.Type != Tok_Comma ) && template_level >= 0 && CheckEndParams()) || (capture_level > 0 || template_level > 0) )
 			{
-				if (currtok.Text[ 0 ] == '<')
+				if (currtok.Text.Ptr[ 0 ] == '<')
 					++ template_level;
 
-				if (currtok.Text[ 0 ] == '>')
+				if (currtok.Text.Ptr[ 0 ] == '>')
 					-- template_level;
-				if (currtok.Type == Tok_Operator && currtok.Text[1] == '>')
+				if (currtok.Type == Tok_Operator && currtok.Text.Ptr[1] == '>')
 					-- template_level;
 
 				if ( currtok.Type == Tok_Capture_Start)
@@ -22787,7 +22687,7 @@ CodeParams parse_params( bool use_template_capture )
 				if ( currtok.Type == Tok_Capture_End)
 					-- capture_level;
 
-				value_tok.Length = ( ( sptr )currtok.Text + currtok.Length ) - ( sptr )value_tok.Text;
+				value_tok.Text.Len = ( ( sptr )currtok.Text.Ptr + currtok.Text.Len ) - ( sptr )value_tok.Text.Ptr;
 				eat( currtok.Type );
 			}
 
@@ -22801,8 +22701,8 @@ CodeParams parse_params( bool use_template_capture )
 
 	result->Macro = macro;
 
-	if ( name.Length > 0 )
-		result->Name = get_cached_string( tok_to_str(name) );
+	if ( name.Text.Len > 0 )
+		result->Name = cache_str( tok_to_str(name) );
 
 	result->ValueType = type;
 
@@ -22841,13 +22741,12 @@ CodeParams parse_params( bool use_template_capture )
 			type = cast(Code, parser_parse_type( use_template_capture, nullptr ));
 			if ( type == Code_Invalid )
 			{
-				parser_pop(& Context);
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 			}
 			// ( <Macro> <ValueType> <Name> = <Expression>, <Macro> <ValueType>
 
-			Token null_token = { nullptr, 0, Tok_Invalid, false };
-			name = null_token;
+			name = NullToken;
 
 			if ( check( Tok_Identifier ) )
 			{
@@ -22868,7 +22767,7 @@ CodeParams parse_params( bool use_template_capture )
 			// In template captures you can have a typename have direct assignment without a name
 			// typename = typename ...
 			// Which would result in a static value type from a struct expansion (traditionally)
-			if ( ( name.Text || use_template_capture ) && bitfield_is_equal( u32, currtok.Flags, TF_Assign ) )
+			if ( ( name.Text.Ptr || use_template_capture ) && bitfield_is_equal( u32, currtok.Flags, TF_Assign ) )
 			{
 				eat( Tok_Operator );
 				// ( <Macro> <ValueType> <Name> = <Expression>, <Macro> <ValueType> <Name> =
@@ -22877,8 +22776,8 @@ CodeParams parse_params( bool use_template_capture )
 
 				if ( currtok.Type == Tok_Comma )
 				{
-					log_failure( "Expected value after assignment operator\n%s", parser_to_string(Context) );
-					parser_pop(& Context);
+					log_failure( "Expected value after assignment operator\n%s", parser_to_strbuilder(_ctx->parser) );
+					parser_pop(& _ctx->parser);
 					return InvalidCode;
 				}
 
@@ -22889,12 +22788,12 @@ CodeParams parse_params( bool use_template_capture )
 				&& template_level >= 0
 				&& CheckEndParams()) || (capture_level > 0 || template_level > 0) )
 				{
-					if (currtok.Text[ 0 ] == '<')
+					if (currtok.Text.Ptr[ 0 ] == '<')
 						++ template_level;
 
-					if (currtok.Text[ 0 ] == '>')
+					if (currtok.Text.Ptr[ 0 ] == '>')
 						-- template_level;
-					if (currtok.Type == Tok_Operator && currtok.Text[1] == '>')
+					if (currtok.Type == Tok_Operator && currtok.Text.Ptr[1] == '>')
 						-- template_level;
 
 					if ( currtok.Type == Tok_Capture_Start)
@@ -22903,7 +22802,7 @@ CodeParams parse_params( bool use_template_capture )
 					if ( currtok.Type == Tok_Capture_End)
 						-- capture_level;
 
-					value_tok.Length = ( ( sptr )currtok.Text + currtok.Length ) - ( sptr )value_tok.Text;
+					value_tok.Text.Len = ( ( sptr )currtok.Text.Ptr + currtok.Text.Len ) - ( sptr )value_tok.Text.Ptr;
 					eat( currtok.Type );
 				}
 
@@ -22918,8 +22817,8 @@ CodeParams parse_params( bool use_template_capture )
 
 		param->Macro = macro;
 
-		if ( name.Length > 0 )
-			param->Name = get_cached_string( tok_to_str(name) );
+		if ( name.Text.Len > 0 )
+			param->Name = cache_str( tok_to_str(name) );
 
 		param->PostNameMacro = post_name_macro;
 		param->ValueType     = cast(CodeTypename, type);
@@ -22936,17 +22835,17 @@ CodeParams parse_params( bool use_template_capture )
 
 	else
 	{
-		if ( ! check( Tok_Operator ) || currtok.Text[ 0 ] != '>' )
+		if ( ! check( Tok_Operator ) || currtok.Text.Ptr[ 0 ] != '>' )
 		{
-			log_failure( "Expected '<' after 'template' keyword\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Expected '<' after 'template' keyword\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 		eat( Tok_Operator );
 		// < <Macro> <ValueType> <Name> = <Expression>, <Macro> <ValueType> <Name> = <Expression>, .. >
 	}
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 #undef context
 }
@@ -22958,8 +22857,8 @@ CodePreprocessCond parse_preprocess_cond()
 
 	if ( ! tok_is_preprocess_cond(currtok) )
 	{
-		log_failure( "Error, expected preprocess conditional\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Error, expected preprocess conditional\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
@@ -22971,17 +22870,17 @@ CodePreprocessCond parse_preprocess_cond()
 
 	if ( ! check( Tok_Preprocess_Content ))
 	{
-		log_failure( "Error, expected content after #define\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Error, expected content after #define\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
-	Context.Scope->Name = currtok;
-	cond->Content = get_cached_string( tok_to_str(currtok) );
+	_ctx->parser.Scope->Name = currtok.Text;
+	cond->Content = cache_str( tok_to_str(currtok) );
 	eat( Tok_Preprocess_Content );
 	// #<Conditiona> <Content>
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return cond;
 }
 
@@ -23018,7 +22917,7 @@ Code parse_simple_preprocess( TokType which, bool dont_consume_braces )
 		eat( Tok_BraceCurly_Close );
 		// <Macro> { <Body> }
 
-		Str prev_proc = Context.Scope->Prev->ProcName;
+		Str prev_proc = _ctx->parser.Scope->Prev->ProcName;
 		if ( c_str_compare_len( prev_proc.Ptr, "parser_parse_typedef", prev_proc.Len ) != 0 )
 		{
 			if ( check( Tok_Statement_End ))
@@ -23033,20 +22932,20 @@ Code parse_simple_preprocess( TokType which, bool dont_consume_braces )
 			}
 		}
 
-		tok.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)tok.Text;
+		tok.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)tok.Text.Ptr;
 	}
 	else
 	{
 		// If the macro is just a macro in the body of an AST it may have a semi-colon for the user to close on purpsoe
 		// (especially for functional macros)
-		Str calling_proc = Context.Scope->Prev->ProcName;
+		Str calling_proc = _ctx->parser.Scope->Prev->ProcName;
 
-		if (str_contains(Context.Scope->Prev->ProcName, txt("parser_parse_enum")))
+		if (str_contains(_ctx->parser.Scope->Prev->ProcName, txt("parser_parse_enum")))
 		{
 			// Do nothing
 			goto Leave_Scope_Early;
 		}
-		else if (str_contains(Context.Scope->Prev->ProcName, txt("parser_parse_typedef")))
+		else if (str_contains(_ctx->parser.Scope->Prev->ProcName, txt("parser_parse_typedef")))
 		{
 			// TODO(Ed): Reveiw the context for this?
 			if ( peektok.Type == Tok_Statement_End )
@@ -23055,7 +22954,7 @@ Code parse_simple_preprocess( TokType which, bool dont_consume_braces )
 				eat( Tok_Statement_End );
 				// <Macro>;
 
-				tok.Length += prevtok.Length;
+				tok.Text.Len += prevtok.Text.Len;
 
 				// TODO(Ed): Reveiw the context for this? (ESPECIALLY THIS)
 				if ( currtok_noskip.Type == Tok_Comment && currtok_noskip.Line == stmt_end.Line )
@@ -23063,7 +22962,7 @@ Code parse_simple_preprocess( TokType which, bool dont_consume_braces )
 					eat( Tok_Comment );
 					// <Macro>; <InlineCmt>
 
-					tok.Length += prevtok.Length;
+					tok.Text.Len += prevtok.Text.Len;
 				}
 			}
 		}
@@ -23077,7 +22976,7 @@ Code parse_simple_preprocess( TokType which, bool dont_consume_braces )
 				Token stmt_end = currtok;
 				eat( Tok_Statement_End );
 				// <Macro>;
-				tok.Length += prevtok.Length;
+				tok.Text.Len += prevtok.Text.Len;
 			}
 
 		}
@@ -23086,12 +22985,12 @@ Code parse_simple_preprocess( TokType which, bool dont_consume_braces )
 
 Leave_Scope_Early:
 
-	char const* content = c_str_fmt_buf( "%.*s ", tok.Length, tok.Text );
+	char const* content = c_str_fmt_buf( "%.*s ", tok.Text.Len, tok.Text.Ptr );
 
 	Code result = untyped_str( to_str_from_c_str(content) );
-	Context.Scope->Name = tok;
+	_ctx->parser.Scope->Name = tok.Text;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23106,7 +23005,7 @@ Code parse_static_assert()
 
 	Token content = currtok;
 
-	Context.Scope->Name = content;
+	_ctx->parser.Scope->Name = content.Text;
 
 	eat( Tok_StaticAssert );
 	eat( Tok_Capture_Start );
@@ -23127,14 +23026,14 @@ Code parse_static_assert()
 	eat( Tok_Statement_End );
 	// static_assert( <Content> );
 
-	content.Length  = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)content.Text;
+	content.Text.Len  = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)content.Text.Ptr;
 
-	char const* str  = c_str_fmt_buf( "%.*s\n", content.Length, content.Text );
-	Str content_str = { content.Length + 1, str };
-	assert->Content = get_cached_string( content_str );
+	char const* str  = c_str_fmt_buf( "%.*s\n", content.Text.Len, content.Text.Ptr );
+	Str content_str = { str, content.Text.Len + 1 };
+	assert->Content = cache_str( content_str );
 	assert->Name	= assert->Content;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return assert;
 }
 
@@ -23147,20 +23046,20 @@ Code parse_static_assert()
 internal inline
 void parse_template_args( Token* token )
 {
-	if ( currtok.Type == Tok_Operator && currtok.Text[ 0 ] == '<' && currtok.Length == 1 )
+	if ( currtok.Type == Tok_Operator && currtok.Text.Ptr[ 0 ] == '<' && currtok.Text.Len == 1 )
 	{
 		eat( Tok_Operator );
 		// <
 
 		s32 level = 0;
-		while ( left && level >= 0 && ( currtok.Text[ 0 ] != '>' || level > 0 ) )
+		while ( left && level >= 0 && ( currtok.Text.Ptr[ 0 ] != '>' || level > 0 ) )
 		{
-			if ( currtok.Text[ 0 ] == '<' )
+			if ( currtok.Text.Ptr[ 0 ] == '<' )
 				level++;
 
-			if ( currtok.Text[ 0 ] == '>' )
+			if ( currtok.Text.Ptr[ 0 ] == '>' )
 				level--;
-			if ( currtok.Type == Tok_Operator && currtok.Text[1] == '>')
+			if ( currtok.Type == Tok_Operator && currtok.Text.Ptr[1] == '>')
 				level--;
 
 			eat( currtok.Type );
@@ -23173,7 +23072,7 @@ void parse_template_args( Token* token )
 		// < <Content> >
 
 		// Extend length of name to last token
-		token->Length = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )token->Text;
+		token->Text.Len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )token->Text.Ptr;
 	}
 }
 
@@ -23221,8 +23120,8 @@ CodeVar parse_variable_after_name(
 		}
 		eat( Tok_BraceCurly_Close );
 
-		expr_tok.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)expr_tok.Text;
-		expr            = untyped_str( tok_to_str(expr_tok) );
+		expr_tok.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)expr_tok.Text.Ptr;
+		expr              = untyped_str( tok_to_str(expr_tok) );
 		// <Attributes> <Specifiers> <ValueType> <Name> = { <Expression> }
 	}
 
@@ -23247,8 +23146,8 @@ CodeVar parse_variable_after_name(
 			eat( currtok.Type );
 		}
 
-		expr_token.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)expr_token.Text;
-		expr              = untyped_str( tok_to_str(expr_token) );
+		expr_token.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)expr_token.Text.Ptr;
+		expr                = untyped_str( tok_to_str(expr_token) );
 		eat( Tok_Capture_End );
 		// <Attributes> <Specifiers> <ValueType> <Name> ( <Expression> )
 	}
@@ -23262,8 +23161,8 @@ CodeVar parse_variable_after_name(
 
 		if ( currtok.Type == Tok_Statement_End )
 		{
-			log_failure( "Expected expression after bitfield \n%SB", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Expected expression after bitfield \n%SB", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -23272,8 +23171,8 @@ CodeVar parse_variable_after_name(
 			eat( currtok.Type );
 		}
 
-		expr_tok.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)expr_tok.Text;
-		bitfield_expr   = untyped_str( tok_to_str(expr_tok) );
+		expr_tok.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)expr_tok.Text.Ptr;
+		bitfield_expr     = untyped_str( tok_to_str(expr_tok) );
 		// <Attributes> <Specifiers> <ValueType> <Name> : <Expression>
 	}
 
@@ -23314,7 +23213,7 @@ CodeVar parse_variable_after_name(
 	CodeVar
 	result              = (CodeVar) make_code();
 	result->Type        = CT_Variable;
-	result->Name        = get_cached_string( name );
+	result->Name        = cache_str( name );
 	result->ModuleFlags = mflags;
 
 	// Type can be null if we're dealing with a declaration from a variable declaration-list
@@ -23347,7 +23246,7 @@ CodeVar parse_variable_after_name(
 
 	result->VarParenthesizedInit = using_constructor_initializer;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23380,7 +23279,7 @@ CodeVar parse_variable_declaration_list()
 					{
 						log_failure( "Error, const specifier must come after pointer specifier for variable declaration proceeding comma\n"
 						"(Parser will add and continue to specifiers, but will most likely fail to compile)\n%SB"
-						, parser_to_string(Context) );
+						, parser_to_strbuilder(_ctx->parser) );
 
 						specifiers_append(specifiers, spec );
 					}
@@ -23393,9 +23292,9 @@ CodeVar parse_variable_declaration_list()
 
 				default:
 				{
-					log_failure( "Error, invalid specifier '%s' proceeding comma\n"
+					log_failure( "Error, invalid specifier '%S' proceeding comma\n"
 					"(Parser will add and continue to specifiers, but will most likely fail to compile)\n%S"
-					, tok_to_str(currtok), parser_to_string(Context) );
+					, tok_to_str(currtok), strbuilder_to_str( parser_to_strbuilder(_ctx->parser)) );
 					continue;
 				}
 				break;
@@ -23430,7 +23329,7 @@ CodeVar parse_variable_declaration_list()
 		}
 	}
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23439,7 +23338,7 @@ CodeClass parser_parse_class( bool inplace_def )
 {
 	push_scope();
 	CodeClass result = (CodeClass) parse_class_struct( Tok_Decl_Class, inplace_def );
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23476,7 +23375,7 @@ CodeConstructor parser_parse_constructor( CodeSpecifiers specifiers )
 			eat( currtok.Type );
 		}
 
-		initializer_list_tok.Length = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )initializer_list_tok.Text;
+		initializer_list_tok.Text.Len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )initializer_list_tok.Text.Ptr;
 		// <Name> ( <Parameters> ) : <InitializerList>
 
 		initializer_list = untyped_str( tok_to_str(initializer_list_tok) );
@@ -23491,7 +23390,7 @@ CodeConstructor parser_parse_constructor( CodeSpecifiers specifiers )
 		body = cast(CodeBody, parse_function_body());
 		// <Name> ( <Parameters> ) { <Body> }
 	}
-	else if ( check( Tok_Operator) && currtok.Text[ 0 ] == '=' )
+	else if ( check( Tok_Operator) && currtok.Text.Ptr[ 0 ] == '=' )
 	{
 		body = cast(CodeBody, parse_assignment_expression());
 	}
@@ -23508,7 +23407,7 @@ CodeConstructor parser_parse_constructor( CodeSpecifiers specifiers )
 
 	CodeConstructor result = ( CodeConstructor )make_code();
 
-	result->Name = get_cached_string( tok_to_str(identifier));
+	result->Name = cache_str( tok_to_str(identifier));
 
 	result->Specs = specifiers;
 
@@ -23529,7 +23428,7 @@ CodeConstructor parser_parse_constructor( CodeSpecifiers specifiers )
 	if ( inline_cmt )
 		result->InlineCmt = inline_cmt;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23538,8 +23437,8 @@ CodeDestructor parser_parse_destructor( CodeSpecifiers specifiers )
 {
 	push_scope();
 
-	bool has_context         = Context.Scope && Context.Scope->Prev;
-	bool is_in_global_nspace = has_context && str_are_equal( Context.Scope->Prev->ProcName, txt("parse_global_nspace") );
+	bool has_context         = _ctx->parser.Scope && _ctx->parser.Scope->Prev;
+	bool is_in_global_nspace = has_context && str_are_equal( _ctx->parser.Scope->Prev->ProcName, txt("parse_global_nspace") );
 
 	if ( check( Tok_Spec_Virtual ) )
 	{
@@ -23555,12 +23454,12 @@ CodeDestructor parser_parse_destructor( CodeSpecifiers specifiers )
 	if (is_in_global_nspace)
 		prefix_identifier = parse_identifier(nullptr);
 
-	if ( left && currtok.Text[ 0 ] == '~' )
+	if ( left && currtok.Text.Ptr[ 0 ] == '~' )
 		eat( Tok_Operator );
 	else
 	{
-		log_failure( "Expected destructor '~' token\n%s", parser_to_string(Context) );
-		parser_pop( & Context);
+		log_failure( "Expected destructor '~' token\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop( & _ctx->parser);
 		return InvalidCode;
 	}
 	// <Virtual Specifier> ~
@@ -23576,13 +23475,13 @@ CodeDestructor parser_parse_destructor( CodeSpecifiers specifiers )
 
 	bool pure_virtual = false;
 
-	if ( check( Tok_Operator ) && currtok.Text[ 0 ] == '=' )
+	if ( check( Tok_Operator ) && currtok.Text.Ptr[ 0 ] == '=' )
 	{
 		// <Virtual Specifier> ~<Name>() =
 
 		bool skip_formatting = true;
 		Token upcoming = nexttok;
-		if ( left && upcoming.Text[ 0 ] == '0' )
+		if ( left && upcoming.Text.Ptr[ 0 ] == '0' )
 		{
 			eat( Tok_Operator );
 			eat( Tok_Number );
@@ -23590,15 +23489,15 @@ CodeDestructor parser_parse_destructor( CodeSpecifiers specifiers )
 
 			specifiers_append(specifiers, Spec_Pure );
 		}
-		else if ( left && c_str_compare_len( upcoming.Text, "default", sizeof("default") - 1 ) == 0)
+		else if ( left && c_str_compare_len( upcoming.Text.Ptr, "default", sizeof("default") - 1 ) == 0)
 		{
 			body = cast(CodeBody, parse_assignment_expression());
 			// <Virtual Specifier> ~<
 		}
 		else
 		{
-			log_failure( "Pure or default specifier expected due to '=' token\n%s", parser_to_string(Context) );
-			parser_pop( & Context);
+			log_failure( "Pure or default specifier expected due to '=' token\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop( & _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -23623,8 +23522,8 @@ CodeDestructor parser_parse_destructor( CodeSpecifiers specifiers )
 
 	if ( tok_is_valid(prefix_identifier) )
 	{
-		prefix_identifier.Length += 1 + identifier.Length;
-		result->Name = get_cached_string( tok_to_str(prefix_identifier) );
+		prefix_identifier.Text.Len += 1 + identifier.Text.Len;
+		result->Name = cache_str( tok_to_str(prefix_identifier) );
 	}
 
 	if ( specifiers )
@@ -23641,7 +23540,7 @@ CodeDestructor parser_parse_destructor( CodeSpecifiers specifiers )
 	if ( inline_cmt )
 		result->InlineCmt = inline_cmt;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23655,7 +23554,7 @@ CodeEnum parser_parse_enum( bool inplace_def )
 
 	CodeAttributes attributes = { nullptr };
 
-	Token        name       = { nullptr, 0, Tok_Invalid };
+	Token        name       = NullToken;
 	Code         array_expr = { nullptr };
 	CodeTypename type       = { nullptr };
 
@@ -23680,7 +23579,7 @@ CodeEnum parser_parse_enum( bool inplace_def )
 	if ( check( Tok_Identifier ) )
 	{
 		name = currtok;
-		Context.Scope->Name = currtok;
+		_ctx->parser.Scope->Name = currtok.Text;
 		eat( Tok_Identifier );
 	}
 	// enum <class> <Attributes> <Name>
@@ -23695,8 +23594,8 @@ CodeEnum parser_parse_enum( bool inplace_def )
 		type = parser_parse_type(parser_not_from_template, nullptr);
 		if ( cast(Code, type) == Code_Invalid )
 		{
-			log_failure( "Failed to parse enum classifier\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Failed to parse enum classifier\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 		// enum <class> <Attributes> <Name> : <UnderlyingType>
@@ -23728,8 +23627,8 @@ CodeEnum parser_parse_enum( bool inplace_def )
 		{
 			if ( ! expects_entry )
 			{
-				log_failure( "Did not expect an entry after last member of enum body.\n%s", parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Did not expect an entry after last member of enum body.\n%s", parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				break;
 			}
 
@@ -23791,7 +23690,7 @@ CodeEnum parser_parse_enum( bool inplace_def )
 					eat( Tok_Identifier);
 					// <Name>
 
-					if ( currtok.Type == Tok_Operator && currtok.Text[0] == '=' )
+					if ( currtok.Type == Tok_Operator && currtok.Text.Ptr[0] == '=' )
 					{
 						eat( Tok_Operator );
 						// <Name> =
@@ -23812,7 +23711,7 @@ CodeEnum parser_parse_enum( bool inplace_def )
 
 					if ( currtok.Type == Tok_Comma )
 					{
-						//Token prev = * previous(Context.Tokens, dont_skip_formatting);
+						//Token prev = * previous(_ctx->parser.Tokens, dont_skip_formatting);
 						//entry.Length = ( (sptr)prev.Text + prev.Length ) - (sptr)entry.Text;
 
 						eat( Tok_Comma );
@@ -23826,8 +23725,8 @@ CodeEnum parser_parse_enum( bool inplace_def )
 						// <Name> = <Expression> <Macro>, // <Inline Comment>
 					// }
 
-					Token prev = * lex_previous(Context.Tokens, lex_dont_skip_formatting);
-					entry.Length = ( (sptr)prev.Text + prev.Length ) - (sptr)entry.Text;
+					Token prev     = * lex_previous(_ctx->parser.Tokens, lex_dont_skip_formatting);
+					entry.Text.Len = ( (sptr)prev.Text.Ptr + prev.Text.Len ) - (sptr)entry.Text.Ptr;
 
 					member = untyped_str( tok_to_str(entry) );
 				break;
@@ -23835,8 +23734,8 @@ CodeEnum parser_parse_enum( bool inplace_def )
 
 			if ( member == Code_Invalid )
 			{
-				log_failure( "Failed to parse member\n%s", parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Failed to parse member\n%s", parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 			}
 
@@ -23873,7 +23772,7 @@ CodeEnum parser_parse_enum( bool inplace_def )
 		result->Type = is_enum_class ? CT_Enum_Class_Fwd : CT_Enum_Fwd;
 	}
 
-	result->Name = get_cached_string( tok_to_str(name) );
+	result->Name = cache_str( tok_to_str(name) );
 
 	if ( attributes )
 		result->Attributes = attributes;
@@ -23885,7 +23784,7 @@ CodeEnum parser_parse_enum( bool inplace_def )
 		result->InlineCmt = inline_cmt;
 
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23894,7 +23793,7 @@ CodeBody parser_parse_export_body()
 {
 	push_scope();
 	CodeBody result = parse_global_nspace( CT_Export_Body );
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23903,7 +23802,7 @@ CodeBody parser_parse_extern_link_body()
 {
 	push_scope();
 	CodeBody result = parse_global_nspace( CT_Extern_Linkage_Body );
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23919,26 +23818,26 @@ CodeExtern parser_parse_extern_link()
 	eat( Tok_String );
 	// extern "<Name>"
 
-	name.Text   += 1;
-	name.Length -= 1;
+	name.Text.Ptr += 1;
+	name.Text.Len -= 1;
 
 	CodeExtern
 	result       = (CodeExtern) make_code();
 	result->Type = CT_Extern_Linkage;
-	result->Name = get_cached_string( tok_to_str(name) );
+	result->Name = cache_str( tok_to_str(name) );
 
 	CodeBody entry = parser_parse_extern_link_body();
 	if ( cast(Code, entry) == Code_Invalid )
 	{
-		log_failure( "Failed to parse body\n%s", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Failed to parse body\n%s", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return result;
 	}
 	// extern "<Name>" { <Body> }
 
 	result->Body = entry;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -23971,8 +23870,8 @@ CodeFriend parser_parse_friend()
 					break;
 
 				default :
-					log_failure( "Invalid specifier %s for friend definition\n%s", spec_to_str( spec ), parser_to_string(Context) );
-					parser_pop(& Context);
+					log_failure( "Invalid specifier %S for friend definition\n%S", spec_to_str( spec ), strbuilder_to_str( parser_to_strbuilder(_ctx->parser)) );
+					parser_pop(& _ctx->parser);
 					return InvalidCode;
 			}
 
@@ -23996,7 +23895,7 @@ CodeFriend parser_parse_friend()
 	CodeTypename type = parser_parse_type(parser_not_from_template, nullptr);
 	if ( cast(Code, type) == Code_Invalid )
 	{
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 	// friend <Type>
@@ -24006,7 +23905,7 @@ CodeFriend parser_parse_friend()
 	{
 		// Name
 		Token name          = parse_identifier(nullptr);
-		Context.Scope->Name = name;
+		_ctx->parser.Scope->Name = name.Text;
 		// friend <ReturnType> <Name>
 
 		function = parse_function_after_name( ModuleFlag_None, NullCode, specifiers, type, name );
@@ -24017,7 +23916,7 @@ CodeFriend parser_parse_friend()
 
 		// function             = make_code();
 		// function->Type       = Function_Fwd;
-		// function->Name       = get_cached_string( name );
+		// function->Name       = cache_str( name );
 		// function->ReturnType = type;
 
 		// if ( params )
@@ -24057,7 +23956,7 @@ CodeFriend parser_parse_friend()
 	if ( inline_cmt )
 		result->InlineCmt = inline_cmt;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -24101,8 +24000,8 @@ CodeFn parser_parse_function()
 			break;
 
 			default:
-				log_failure( "Invalid specifier %s for functon\n%s", spec_to_str(spec), parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Invalid specifier %S for functon\n%SB", spec_to_str(spec), parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 		}
 
@@ -24123,16 +24022,16 @@ CodeFn parser_parse_function()
 	CodeTypename ret_type = parser_parse_type(parser_not_from_template, nullptr);
 	if ( cast(Code, ret_type) == Code_Invalid )
 	{
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 	// <export> <Attributes> <Specifiers> <ReturnType>
 
 	Token name = parse_identifier(nullptr);
-	Context.Scope->Name = name;
+	_ctx->parser.Scope->Name = name.Text;
 	if ( ! tok_is_valid(name) )
 	{
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 	// <export> <Attributes> <Specifiers> <ReturnType> <Name>
@@ -24140,7 +24039,7 @@ CodeFn parser_parse_function()
 	CodeFn result = parse_function_after_name( mflags, attributes, specifiers, ret_type, name );
 	// <export> <Attributes> <Specifiers> <ReturnType> <Name> ...
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -24153,13 +24052,13 @@ CodeNS parser_parse_namespace()
 	// namespace
 
 	Token name = parse_identifier(nullptr);
-	Context.Scope->Name = name;
+	_ctx->parser.Scope->Name = name.Text;
 	// namespace <Name>
 
 	CodeBody body = parse_global_nspace( CT_Namespace_Body );
 	if ( cast(Code, body) == Code_Invalid )
 	{
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 	// namespace <Name> { <Body> }
@@ -24167,11 +24066,11 @@ CodeNS parser_parse_namespace()
 	CodeNS
 	result       = (CodeNS) make_code();
 	result->Type = CT_Namespace;
-	result->Name = get_cached_string( tok_to_str(name) );
+	result->Name = cache_str( tok_to_str(name) );
 
 	result->Body = body;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -24213,8 +24112,8 @@ CodeOperator parser_parse_operator()
 			break;
 
 			default:
-				log_failure( "Invalid specifier " "%S" " for operator\n%SB", spec_to_str(spec), parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Invalid specifier " "%S" " for operator\n%SB", spec_to_str(spec), parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 		}
 
@@ -24239,7 +24138,7 @@ CodeOperator parser_parse_operator()
 	CodeOperator result = parse_operator_after_ret_type( mflags, attributes, specifiers, ret_type );
 	// <export> <Attributes> <Specifiers> <ReturnType> ...
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -24264,7 +24163,7 @@ CodeOpCast parser_parse_operator_cast( CodeSpecifiers specifiers )
 		}
 		// <Specifiers> <Qualifier> :: ...
 
-		name.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)name.Text;
+		name.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)name.Text.Ptr;
 	}
 
 	eat( Tok_Decl_Operator );
@@ -24273,8 +24172,9 @@ CodeOpCast parser_parse_operator_cast( CodeSpecifiers specifiers )
 	CodeTypename type = parser_parse_type(parser_not_from_template, nullptr);
 	// <Specifiers> <Qualifier> :: ... operator <UnderlyingType>
 
-	Token name_tok = { type->Name.Ptr, type->Name.Len };
-	Context.Scope->Name = name_tok;
+	Str scope_name         = { type->Name.Ptr, type->Name.Len };
+	Token scope_name_tok   = { scope_name, Tok_Identifier, 0, 0, TF_Null };
+	_ctx->parser.Scope->Name = scope_name_tok.Text;
 
 	eat( Tok_Capture_Start );
 	eat( Tok_Capture_End );
@@ -24314,7 +24214,7 @@ CodeOpCast parser_parse_operator_cast( CodeSpecifiers specifiers )
 
 			eat( currtok.Type );
 		}
-		body_str.Length = ( (sptr)prevtok.Text + prevtok.Length ) - (sptr)body_str.Text;
+		body_str.Text.Len = ( (sptr)prevtok.Text.Ptr + prevtok.Text.Len ) - (sptr)body_str.Text.Ptr;
 
 		eat( Tok_BraceCurly_Close );
 		// <Specifiers> <Qualifier> :: ... operator <UnderlyingType>() <const> { <Body> }
@@ -24335,7 +24235,7 @@ CodeOpCast parser_parse_operator_cast( CodeSpecifiers specifiers )
 	CodeOpCast result = (CodeOpCast) make_code();
 
 	if ( tok_is_valid(name) )
-		result->Name = get_cached_string( tok_to_str(name) );
+		result->Name = cache_str( tok_to_str(name) );
 
 	if (body)
 	{
@@ -24352,7 +24252,7 @@ CodeOpCast parser_parse_operator_cast( CodeSpecifiers specifiers )
 
 	result->ValueType = cast(CodeTypename, type);
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -24361,7 +24261,7 @@ CodeStruct parser_parse_struct( bool inplace_def )
 {
 	push_scope();
 	CodeStruct result = (CodeStruct) parse_class_struct( Tok_Decl_Struct, inplace_def );
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -24387,7 +24287,7 @@ CodeTemplate parser_parse_template()
 	CodeParams params = parse_params( UseTemplateCapture );
 	if ( cast(Code, params) == Code_Invalid )
 	{
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 	// <export> template< <Parameters> >
@@ -24425,7 +24325,7 @@ CodeTemplate parser_parse_template()
 		}
 
 		// Its either a function or a variable
-		Token name                = { nullptr, 0, Tok_Invalid };
+		Token name                = NullToken;
 
 		CodeAttributes attributes = { nullptr };
 		CodeSpecifiers specifiers = { nullptr };
@@ -24451,7 +24351,7 @@ CodeTemplate parser_parse_template()
 					case Spec_Constinit :
 					case Spec_External_Linkage :
 					case Spec_Global :
-					case Spec_GB_Global:
+					case Spec_GB_Global :
 					case Spec_Inline :
 					case Spec_GB_Inline :
 					case Spec_ForceInline :
@@ -24467,8 +24367,8 @@ CodeTemplate parser_parse_template()
 						break;
 
 					default :
-						log_failure( "Invalid specifier %s for variable or function\n%s", spec_to_str( spec ), parser_to_string(Context) );
-						parser_pop(& Context);
+						log_failure( "Invalid specifier %S for variable or function\n%SB", spec_to_str( spec ), parser_to_strbuilder(_ctx->parser) );
+						parser_pop(& _ctx->parser);
 						return InvalidCode;
 				}
 
@@ -24489,8 +24389,8 @@ CodeTemplate parser_parse_template()
 		}
 
 
-		bool has_context         = Context.Scope && Context.Scope->Prev;
-		bool is_in_global_nspace = has_context && str_are_equal( Context.Scope->Prev->ProcName, txt("parse_global_nspace") );
+		bool has_context         = _ctx->parser.Scope && _ctx->parser.Scope->Prev;
+		bool is_in_global_nspace = has_context && str_are_equal( _ctx->parser.Scope->Prev->ProcName, txt("parse_global_nspace") );
 		// Possible constructor implemented at global file scope.
 		if (is_in_global_nspace)
 		{
@@ -24507,16 +24407,16 @@ CodeTemplate parser_parse_template()
 		if (is_in_global_nspace)
 		{
 			bool found_operator_cast_outside_class_implmentation = false;
-			s32  idx = Context.Tokens.Idx;
+			s32  idx = _ctx->parser.Tokens.Idx;
 
-			for ( ; idx < array_num(Context.Tokens.Arr); idx++ )
+			for ( ; idx < array_num(_ctx->parser.Tokens.Arr); idx++ )
 			{
-				Token tok = Context.Tokens.Arr[ idx ];
+				Token tok = _ctx->parser.Tokens.Arr[ idx ];
 
 				if ( tok.Type == Tok_Identifier )
 				{
 					idx++;
-					tok = Context.Tokens.Arr[ idx ];
+					tok = _ctx->parser.Tokens.Arr[ idx ];
 					if ( tok.Type == Tok_Access_StaticSymbol )
 						continue;
 
@@ -24549,7 +24449,7 @@ CodeTemplate parser_parse_template()
 	result->ModuleFlags = mflags;
 	// result->Name        = definition->Name;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 #undef UseTemplateCapture
 }
@@ -24576,7 +24476,7 @@ CodeTypename parser_parse_type( bool from_template, bool* typedef_is_function )
 	Specifier specs_found[ 16 ] = { Spec_NumSpecifiers };
 	s32       NumSpecifiers = 0;
 
-	Token name= { nullptr, 0, Tok_Invalid };
+	Token name= NullToken;
 
 	ETypenameTag tag = Tag_None;
 
@@ -24591,8 +24491,8 @@ CodeTypename parser_parse_type( bool from_template, bool* typedef_is_function )
 
 		if ( spec != Spec_Const )
 		{
-			log_failure( "Error, invalid specifier used in type definition: %S\n%SB", tok_to_str(currtok), parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, invalid specifier used in type definition: %S\n%SB", tok_to_str(currtok), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -24604,8 +24504,8 @@ CodeTypename parser_parse_type( bool from_template, bool* typedef_is_function )
 
 	if ( left == 0 )
 	{
-		log_failure( "Error, unexpected end of type definition\n%SB", parser_to_string(Context) );
-		parser_pop(& Context);
+		log_failure( "Error, unexpected end of type definition\n%SB", parser_to_strbuilder(_ctx->parser) );
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
@@ -24636,7 +24536,7 @@ CodeTypename parser_parse_type( bool from_template, bool* typedef_is_function )
 
 		// name.Length = ( ( sptr )currtok.Text + currtok.Length ) - ( sptr )name.Text;
 		// eat( Tok_Identifier );
-		Context.Scope->Name = name;
+		_ctx->parser.Scope->Name = name.Text;
 		// <Attributes> <Specifiers> <class, enum, struct, union> <Name>
 	}
 
@@ -24663,7 +24563,7 @@ else if ( currtok.Type == Tok_DeclType )
 	eat( Tok_Capture_End );
 
 	name.Length = ( (sptr)currtok.Text + currtok.Length ) - (sptr)name.Text;
-	Context.Scope->Name = name;
+	_ctx->parser.Scope->Name = name;
 	// <Attributes> <Specifiers> decltype( <Expression > )
 }
 #endif
@@ -24681,7 +24581,7 @@ else if ( currtok.Type == Tok_DeclType )
 			eat( currtok.Type );
 		}
 
-		name.Length = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )name.Text;
+		name.Text.Len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )name.Text.Ptr;
 		// <Attributes> <Specifiers> <Compound type expression>
 	}
 	else if ( currtok.Type == Tok_Type_Typename )
@@ -24693,11 +24593,11 @@ else if ( currtok.Type == Tok_DeclType )
 		if ( ! from_template )
 		{
 			name                = parse_identifier(nullptr);
-			Context.Scope->Name = name;
+			_ctx->parser.Scope->Name = name.Text;
 			if ( ! tok_is_valid(name) )
 			{
-				log_failure( "Error, failed to type signature\n%s", parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Error, failed to type signature\n%s", parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 			}
 		}
@@ -24712,11 +24612,11 @@ else if ( currtok.Type == Tok_DeclType )
 	else
 	{
 		name                = parse_identifier(nullptr);
-		Context.Scope->Name = name;
+		_ctx->parser.Scope->Name = name.Text;
 		if ( ! tok_is_valid(name) )
 		{
-			log_failure( "Error, failed to type signature\n%s", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, failed to type signature\n%s", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 		// <Attributes> <Specifiers> <Qualifier ::> <Identifier>
@@ -24730,8 +24630,8 @@ else if ( currtok.Type == Tok_DeclType )
 
 		if ( spec != Spec_Const && spec != Spec_Ptr && spec != Spec_Ref && spec != Spec_RValue )
 		{
-			log_failure( "Error, invalid specifier used in type definition: %s\n%s", currtok.Text, parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, invalid specifier used in type definition: %S\n%SB", tok_to_str(currtok), parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -24760,7 +24660,7 @@ else if ( currtok.Type == Tok_DeclType )
 	bool   is_function_typename = false;
 	Token* last_capture         = nullptr;
 	{
-		Token* scanner = Context.Tokens.Arr + Context.Tokens.Idx;
+		Token* scanner = _ctx->parser.Tokens.Arr + _ctx->parser.Tokens.Idx;
 
 		// An identifier being within a typename's signature only occurs if were parsing a typename for a typedef.
 		if ( typedef_is_function && scanner->Type == Tok_Identifier )
@@ -24784,8 +24684,8 @@ else if ( currtok.Type == Tok_DeclType )
 			last_capture = scanner;
 		}
 
-		bool has_context   = Context.Scope && Context.Scope->Prev;
-		bool is_for_opcast = has_context && str_are_equal( Context.Scope->Prev->ProcName, txt("parser_parse_operator_cast") );
+		bool has_context   = _ctx->parser.Scope && _ctx->parser.Scope->Prev;
+		bool is_for_opcast = has_context && str_are_equal( _ctx->parser.Scope->Prev->ProcName, txt("parser_parse_operator_cast") );
 		if ( is_for_opcast && is_function_typename && last_capture )
 		{
 			// If we're parsing for an operator cast, having one capture start is not enough
@@ -24810,9 +24710,9 @@ else if ( currtok.Type == Tok_DeclType )
 		return_type->Type = CT_Typename;
 
 		// StrBuilder
-		// name_stripped = StrBuilder::make( GlobalAllocator, name );
+		// name_stripped = StrBuilder::make( FallbackAllocator, name );
 		// name_stripped.strip_space();
-		return_type->Name = get_cached_string( tok_to_str(name) );
+		return_type->Name = cache_str( tok_to_str(name) );
 
 #ifdef GEN_USE_NEW_TYPENAME_PARSING
 		if ( specifiers )
@@ -24841,7 +24741,7 @@ else if ( currtok.Type == Tok_DeclType )
 
 		// If the next token is a capture start and is not the last capture, then we're dealing with function typename whoose identifier is within the
 		// capture.
-		else if ( ( Context.Tokens.Arr + Context.Tokens.Idx ) != last_capture )
+		else if ( ( _ctx->parser.Tokens.Arr + _ctx->parser.Tokens.Idx ) != last_capture )
 		{
 			// WIP : Possible alternative without much pain...
 			// If this were to be parsed properly...
@@ -24862,8 +24762,8 @@ else if ( currtok.Type == Tok_DeclType )
 
 				if ( spec != Spec_Ptr && spec != Spec_Ref && spec != Spec_RValue )
 				{
-					log_failure( "Error, invalid specifier used in type definition: %s\n%s", currtok.Text, to_string(Context) );
-					pop(& Context);
+					log_failure( "Error, invalid specifier used in type definition: %S\n%SB", toktype_to_str(currtok), to_strbuilder(_ctx->parser) );
+					pop(& _ctx->parser);
 					return InvalidCode;
 				}
 
@@ -24914,7 +24814,7 @@ else if ( currtok.Type == Tok_DeclType )
 			eat( Tok_Capture_End );
 			// <Attributes> <ReturnType> ( <Expression> )
 
-			name.Length = ( ( sptr )prevtok.Text + prevtok.Length ) - ( sptr )name.Text;
+			name.Text.Len = ( ( sptr )prevtok.Text.Ptr + prevtok.Text.Len ) - ( sptr )name.Text.Ptr;
 #endif
 		}
 
@@ -24932,8 +24832,8 @@ else if ( currtok.Type == Tok_DeclType )
 					// && spec != Spec_NoExcept
 					&& spec != Spec_RValue )
 			{
-				log_failure( "Error, invalid specifier used in type definition: %S\n%SB", tok_to_str(currtok), parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Error, invalid specifier used in type definition: %S\n%S", tok_to_str(currtok), strbuilder_to_str( parser_to_strbuilder(_ctx->parser)) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 			}
 
@@ -24963,7 +24863,7 @@ else if ( currtok.Type == Tok_DeclType )
 
 	CodeTypename result = ( CodeTypename )make_code();
 	result->Type        = CT_Typename;
-	// result->Token = Context.Scope->Start;
+	// result->Token = _ctx->parser.Scope->Start;
 
 	// Need to wait until were using the new parsing method to do this.
 	StrBuilder name_stripped = parser_strip_formatting( tok_to_str(name), parser_strip_formatting_dont_preserve_newlines );
@@ -24973,11 +24873,11 @@ else if ( currtok.Type == Tok_DeclType )
 #ifdef GEN_USE_NEW_TYPENAME_PARSING
 	if ( params_nested )
 	{
-		name_stripped.append( params_nested->to_string() );
+		name_stripped.append( params_nested->to_strbuilder() );
 	}
 #endif
 
-	result->Name = get_cached_string( strbuilder_to_str(name_stripped) );
+	result->Name = cache_str( strbuilder_to_str(name_stripped) );
 
 	if ( attributes )
 		result->Attributes = attributes;
@@ -25017,7 +24917,7 @@ else if ( currtok.Type == Tok_DeclType )
 
 	result->TypeTag = tag;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -25027,7 +24927,7 @@ CodeTypedef parser_parse_typedef()
 	push_scope();
 
 	bool  is_function = false;
-	Token name        = { nullptr, 0, Tok_Invalid };
+	Token name        = NullToken;
 	Code  array_expr  = { nullptr };
 	Code  type        = { nullptr };
 
@@ -25053,14 +24953,13 @@ CodeTypedef parser_parse_typedef()
 	{
 		type = cast(Code, t_empty);
 		name = currtok;
-		Context.Scope->Name = name;
+		_ctx->parser.Scope->Name = name.Text;
 		eat( Tok_Preprocess_Macro );
 		// <ModuleFalgs> typedef <Preprocessed_Macro>
 
 		if ( currtok.Type == Tok_Identifier )
 		{
-			Str name_str = { name.Length, name.Text };
-			type = untyped_str(name_str);
+			type = untyped_str(name.Text);
 			name = currtok;
 			eat(Tok_Identifier);
 		}
@@ -25078,7 +24977,7 @@ CodeTypedef parser_parse_typedef()
 		// This code is highly correlated with parse_complicated_definition
 		if ( is_complicated )
 		{
-			TokArray tokens = Context.Tokens;
+			TokArray tokens = _ctx->parser.Tokens;
 			TokType  which  = currtok.Type;
 
 			s32 idx = tokens.Idx;
@@ -25138,8 +25037,8 @@ CodeTypedef parser_parse_typedef()
 
 					if ( ! ok_to_parse )
 					{
-						log_failure( "Unsupported or bad member definition after struct declaration\n%SB", parser_to_string(Context) );
-						parser_pop(& Context);
+						log_failure( "Unsupported or bad member definition after struct declaration\n%SB", parser_to_strbuilder(_ctx->parser) );
+						parser_pop(& _ctx->parser);
 						return InvalidCode;
 					}
 
@@ -25164,8 +25063,8 @@ CodeTypedef parser_parse_typedef()
 				}
 				else
 				{
-					log_failure( "Unsupported or bad member definition after struct declaration\n%SB", parser_to_string(Context) );
-					parser_pop(& Context);
+					log_failure( "Unsupported or bad member definition after struct declaration\n%SB", parser_to_strbuilder(_ctx->parser) );
+					parser_pop(& _ctx->parser);
 					return InvalidCode;
 				}
 			}
@@ -25185,8 +25084,8 @@ CodeTypedef parser_parse_typedef()
 		}
 		else if ( ! is_function )
 		{
-			log_failure( "Error, expected identifier for typedef\n%SB", parser_to_string(Context) );
-			parser_pop(& Context);
+			log_failure( "Error, expected identifier for typedef\n%SB", parser_to_strbuilder(_ctx->parser) );
+			parser_pop(& _ctx->parser);
 			return InvalidCode;
 		}
 
@@ -25215,7 +25114,7 @@ CodeTypedef parser_parse_typedef()
 	}
 	else
 	{
-		result->Name       = get_cached_string( tok_to_str(name) );
+		result->Name       = cache_str( tok_to_str(name) );
 		result->IsFunction = false;
 	}
 
@@ -25232,7 +25131,7 @@ CodeTypedef parser_parse_typedef()
 	if ( inline_cmt )
 		result->InlineCmt = inline_cmt;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -25256,11 +25155,11 @@ CodeUnion parser_parse_union( bool inplace_def )
 	CodeAttributes attributes = parse_attributes();
 	// <ModuleFlags> union <Attributes>
 
-	Str name = { 0, nullptr };
+	Str name = { nullptr, 0 };
 	if ( check( Tok_Identifier ) )
 {
 		name = tok_to_str(currtok);
-		Context.Scope->Name = currtok;
+		_ctx->parser.Scope->Name = currtok.Text;
 		eat( Tok_Identifier );
 	}
 	// <ModuleFlags> union <Attributes> <Name>
@@ -25373,12 +25272,12 @@ CodeUnion parser_parse_union( bool inplace_def )
 	result->ModuleFlags = mflags;
 
 	if ( name.Len )
-		result->Name = get_cached_string( name );
+		result->Name = cache_str( name );
 
 	result->Body       = body;
 	result->Attributes = attributes;
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -25390,7 +25289,7 @@ CodeUsing parser_parse_using()
 	Specifier specs_found[16] = { Spec_Invalid };
 	s32        NumSpecifiers = 0;
 
-	Token        name       = { nullptr, 0, Tok_Invalid };
+	Token        name       = NullToken;
 	Code         array_expr = { nullptr };
 	CodeTypename type       = { nullptr };
 
@@ -25417,7 +25316,7 @@ CodeUsing parser_parse_using()
 	}
 
 	name = currtok;
-	Context.Scope->Name = name;
+	_ctx->parser.Scope->Name = name.Text;
 	eat( Tok_Identifier );
 	// <ModuleFlags> using <namespace> <Name>
 
@@ -25452,7 +25351,7 @@ CodeUsing parser_parse_using()
 
 	CodeUsing
 	result              = (CodeUsing) make_code();
-	result->Name        = get_cached_string( tok_to_str(name) );
+	result->Name        = cache_str( tok_to_str(name) );
 	result->ModuleFlags = mflags;
 
 	if ( is_namespace)
@@ -25476,7 +25375,7 @@ CodeUsing parser_parse_using()
 			result->InlineCmt = inline_cmt;
 	}
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -25523,8 +25422,8 @@ CodeVar parser_parse_variable()
 			break;
 
 			default:
-				log_failure( "Invalid specifier %s for variable\n%s", spec_to_str( spec ), parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Invalid specifier %S for variable\n%S", spec_to_str( spec ), strbuilder_to_str( parser_to_strbuilder(_ctx->parser)) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 		}
 
@@ -25549,14 +25448,14 @@ CodeVar parser_parse_variable()
 	if ( cast(Code, type) == Code_Invalid )
 		return InvalidCode;
 
-	Context.Scope->Name = parse_identifier(nullptr);
+	_ctx->parser.Scope->Name = parse_identifier(nullptr).Text;
 	// <ModuleFlags> <Attributes> <Specifiers> <ValueType> <Name>
 
-	CodeVar result = parse_variable_after_name( mflags, attributes, specifiers, type, tok_to_str(Context.Scope->Name) );
+	CodeVar result = parse_variable_after_name( mflags, attributes, specifiers, type, _ctx->parser.Scope->Name );
 	// Regular  : <ModuleFlags> <Attributes> <Specifiers> <ValueType> <Name>                  = <Value>; <InlineCmt>
 	// Bitfield : <ModuleFlags> <Attributes> <Specifiers> <ValueType> <Name> : <BitfieldSize> = <Value>; <InlineCmt>
 
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
@@ -25566,8 +25465,6 @@ CodeTypename parser_parse_type_alt( bool from_template, bool* typedef_is_functon
 	return InvalidCode;
 }
 
-GEN_NS_PARSER_END
-
 #ifdef CHECK_WAS_DEFINED
 #pragma pop_macro("check")
 #endif
@@ -25576,23 +25473,21 @@ GEN_NS_PARSER_END
 
 CodeClass parse_class( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	push_scope();
 	CodeClass result = (CodeClass) parse_class_struct( Tok_Decl_Class, parser_not_inplace_def );
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
 CodeConstructor parse_constructor( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
@@ -25625,8 +25520,8 @@ CodeConstructor parse_constructor( Str def )
 				break;
 
 			default :
-				log_failure( "Invalid specifier %s for variable\n%s", spec_to_str( spec ), parser_to_string(Context) );
-				parser_pop(& Context);
+				log_failure( "Invalid specifier %s for variable\n%S", spec_to_str( spec ), parser_to_strbuilder(_ctx->parser) );
+				parser_pop(& _ctx->parser);
 				return InvalidCode;
 		}
 
@@ -25645,14 +25540,13 @@ CodeConstructor parse_constructor( Str def )
 		// <specifiers> ...
 	}
 
-	Context.Tokens         = toks;
+	_ctx->parser.Tokens         = toks;
 	CodeConstructor result = parser_parse_constructor( specifiers );
 	return result;
 }
 
 CodeDestructor parse_destructor( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
@@ -25662,225 +25556,209 @@ CodeDestructor parse_destructor( Str def )
 	// TODO(Ed): Destructors can have prefix attributes
 	// TODO(Ed): Destructors can have virtual
 
-	Context.Tokens        = toks;
+	_ctx->parser.Tokens        = toks;
 	CodeDestructor result = parser_parse_destructor(NullCode);
 	return result;
 }
 
 CodeEnum parse_enum( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 	{
-		parser_pop(& Context);
+		parser_pop(& _ctx->parser);
 		return InvalidCode;
 	}
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_enum( parser_not_inplace_def);
 }
 
 CodeBody parse_export_body( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_export_body();
 }
 
 CodeExtern parse_extern_link( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_extern_link();
 }
 
 CodeFriend parse_friend( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_friend();
 }
 
 CodeFn parse_function( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return (CodeFn) parser_parse_function();
 }
 
 CodeBody parse_global_body( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	push_scope();
 	CodeBody result = parse_global_nspace( CT_Global_Body );
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
 CodeNS parse_namespace( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_namespace();
 }
 
 CodeOperator parse_operator( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return (CodeOperator) parser_parse_operator();
 }
 
 CodeOpCast parse_operator_cast( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_operator_cast(NullCode);
 }
 
 CodeStruct parse_struct( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	push_scope();
 	CodeStruct result = (CodeStruct) parse_class_struct( Tok_Decl_Struct, parser_not_inplace_def );
-	parser_pop(& Context);
+	parser_pop(& _ctx->parser);
 	return result;
 }
 
 CodeTemplate parse_template( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_template();
 }
 
 CodeTypename parse_type( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_type( parser_not_from_template, nullptr);
 }
 
 CodeTypedef parse_typedef( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_typedef();
 }
 
 CodeUnion parse_union( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_union( parser_not_inplace_def);
 }
 
 CodeUsing parse_using( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_using();
 }
 
 CodeVar parse_variable( Str def )
 {
-	GEN_USING_NS_PARSER;
 	check_parse_args( def );
 
 	TokArray toks = lex( def );
 	if ( toks.Arr == nullptr )
 		return InvalidCode;
 
-	Context.Tokens = toks;
+	_ctx->parser.Tokens = toks;
 	return parser_parse_variable();
 }
 
@@ -25912,26 +25790,25 @@ CodeVar parse_variable( Str def )
 
 #pragma endregion Parsing
 
+#pragma region Untyped
+
 ssize token_fmt_va( char* buf, usize buf_size, s32 num_tokens, va_list va )
 {
 	char const* buf_begin = buf;
 	ssize       remaining = buf_size;
 
-	local_persist
-	TokenMap_FixedArena tok_map_arena;
-	fixed_arena_init( & tok_map_arena);
-
-	local_persist
-	StringTable tok_map;
+	local_persist StringTable tok_map;
+	do_once() {
+		tok_map = hashtable_init(Str, _ctx->Allocator_DyanmicContainers );
+	}
+	// Populate token pairs
 	{
-		tok_map = hashtable_init(Str, fixed_arena_allocator_info(& tok_map_arena) );
-
 		s32 left = num_tokens - 1;
 
 		while ( left-- )
 		{
 			char const* token = va_arg( va, char const* );
-			Str        value = va_arg( va, Str );
+			Str         value = va_arg( va, Str );
 
 			u32 key = crc32( token, c_str_len(token) );
 			hashtable_set( tok_map, key, value );
@@ -25999,12 +25876,8 @@ ssize token_fmt_va( char* buf, usize buf_size, s32 num_tokens, va_list va )
 			current = * fmt;
 		}
 	}
-
 	hashtable_clear(tok_map);
-	fixed_arena_free(& tok_map_arena);
-
 	ssize result = buf_size - remaining;
-
 	return result;
 }
 
@@ -26018,7 +25891,7 @@ Code untyped_str( Str content )
 
 	Code
 	result          = make_code();
-	result->Name    = get_cached_string( content );
+	result->Name    = cache_str( content );
 	result->Type    = CT_Untyped;
 	result->Content = result->Name;
 
@@ -26046,15 +25919,12 @@ Code untyped_fmt( char const* fmt, ...)
 	va_start(va, fmt);
 	ssize length = c_str_fmt_va(buf, GEN_PRINTF_MAXLEN, fmt, va);
 	va_end(va);
-
-	Str buf_str      = { c_str_len_capped(fmt, MaxNameLength), fmt };
-    Str uncapped_str = { length, buf };
+    Str content = { buf, length };
 
 	Code
 	result          = make_code();
-	result->Name    = get_cached_string( buf_str );
 	result->Type    = CT_Untyped;
-	result->Content = get_cached_string( uncapped_str );
+	result->Content = cache_str( content );
 
 	if ( result->Name.Len == 0 )
 	{
@@ -26081,13 +25951,12 @@ Code untyped_token_fmt( s32 num_tokens, char const* fmt, ... )
 	ssize length = token_fmt_va(buf, GEN_PRINTF_MAXLEN, num_tokens, va);
 	va_end(va);
 
-	Str buf_str = { length, buf };
+	Str buf_str = { buf, length };
 
 	Code
 	result          = make_code();
-	result->Name    = get_cached_string( buf_str );
 	result->Type    = CT_Untyped;
-	result->Content = result->Name;
+	result->Content = cache_str( buf_str );
 
 	if ( result->Name.Len == 0 )
 	{
@@ -26098,8 +25967,9 @@ Code untyped_token_fmt( s32 num_tokens, char const* fmt, ... )
 	return result;
 }
 
-#pragma endregion Interface
+#pragma endregion Untyped
 
+#pragma endregion Interface
 
 #pragma region Builder
 
@@ -26114,7 +25984,7 @@ Builder builder_open( char const* path )
 		return result;
 	}
 
-	result.Buffer = strbuilder_make_reserve( GlobalAllocator, Builder_StrBufferReserve );
+	result.Buffer = strbuilder_make_reserve( _ctx->Allocator_Temp, _ctx->InitSize_BuilderBuffer );
 
 	// log_fmt("$Builder - Opened file: %s\n", result.File.filename );
 	return result;
@@ -26127,7 +25997,7 @@ void builder_pad_lines( Builder* builder, s32 num )
 
 void builder_print( Builder* builder, Code code )
 {
-	StrBuilder   str = code_to_string(code);
+	StrBuilder   str = code_to_strbuilder(code);
 	// const ssize len = str.length();
 	// log_fmt( "%s - print: %.*s\n", File.filename, len > 80 ? 80 : len, str.Data );
 	strbuilder_append_string( & builder->Buffer, str );
@@ -26159,36 +26029,6 @@ void builder_write(Builder* builder)
 
 #pragma region Scanner
 
-// This is a simple file reader that reads the entire file into memory.
-// It has an extra option to skip the first few lines for undesired includes.
-// This is done so that includes can be kept in dependency and component files so that intellisense works.
-Code scan_file( char const* path );
-
-CodeBody parse_file( const char* path );
-
-// The follow is basic support for light csv parsing (use it as an example)
-// Make something robust if its more serious.
-
-typedef struct CSV_Column CSV_Column;
-struct CSV_Column {
-	CSV_Object      ADT;
-	Array(ADT_Node) Content;
-};
-
-typedef struct CSV_Columns2 CSV_Columns2;
-struct CSV_Columns2 {
-	CSV_Object      ADT;
-	Array(ADT_Node) Col_1;
-	Array(ADT_Node) Col_2;
-};
-
-CSV_Column parse_csv_one_column(AllocatorInfo allocator, char const* path);
-CSV_Columns2 parse_csv_two_columns(AllocatorInfo allocator, char const* path);
-
-#pragma endregion Scanner
-
-#pragma region Scanner
-
 Code scan_file( char const* path )
 {
 	FileInfo file;
@@ -26205,7 +26045,7 @@ Code scan_file( char const* path )
 		GEN_FATAL("scan_file: %s is empty", path );
 	}
 
-	StrBuilder str = strbuilder_make_reserve( GlobalAllocator, fsize );
+	StrBuilder str = strbuilder_make_reserve( _ctx->Allocator_Temp, fsize );
 		file_read( & file, str, fsize );
 		strbuilder_get_header(str)->Length = fsize;
 
@@ -26302,8 +26142,8 @@ Code scan_file( char const* path )
 }
 
 CodeBody parse_file( const char* path ) {
-	FileContents file    = file_read_contents( GlobalAllocator, true, path );
-	Str         content = { file.size, (char const*)file.data };
+	FileContents file    = file_read_contents( _ctx->Allocator_Temp, true, path );
+	Str          content = { (char const*)file.data, file.size };
 	CodeBody     code    = parse_global_body( content );
 	log_fmt("\nParsed: %s\n", path);
 	return code;
@@ -26331,6 +26171,7 @@ CSV_Columns2 parse_csv_two_columns(AllocatorInfo allocator, char const* path) {
 }
 
 #pragma endregion Scanner
+
 GEN_NS_END
 
 #endif
