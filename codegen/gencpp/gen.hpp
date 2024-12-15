@@ -4560,6 +4560,9 @@ enum Specifier : u32
 	Spec_Global,
 	Spec_Inline,
 	Spec_Internal_Linkage,
+	Spec_GB_Global,
+	Spec_GB_Inline,
+	Spec_GB_Internal_Linkage,
 	Spec_Local_Persist,
 	Spec_Mutable,
 	Spec_NeverInline,
@@ -4582,7 +4585,7 @@ enum Specifier : u32
 
 inline Str spec_to_str( Specifier type )
 {
-	local_persist Str lookup[26] = {
+	local_persist Str lookup[] = {
 		{ "INVALID",       sizeof( "INVALID" ) - 1       },
 		{ "consteval",     sizeof( "consteval" ) - 1     },
 		{ "constexpr",     sizeof( "constexpr" ) - 1     },
@@ -4593,6 +4596,9 @@ inline Str spec_to_str( Specifier type )
 		{ "global",        sizeof( "global" ) - 1        },
 		{ "inline",        sizeof( "inline" ) - 1        },
 		{ "internal",      sizeof( "internal" ) - 1      },
+		{ "gb_global",     sizeof( "gb_global" ) - 1     },
+		{ "gb_inline",     sizeof( "gb_inline" ) - 1     },
+		{ "gb_internal",   sizeof( "gb_internal" ) - 1   },
 		{ "local_persist", sizeof( "local_persist" ) - 1 },
 		{ "mutable",       sizeof( "mutable" ) - 1       },
 		{ "neverinline",   sizeof( "neverinline" ) - 1   },
@@ -4724,6 +4730,9 @@ enum TokType : u32
 	Tok_Spec_Global,
 	Tok_Spec_Inline,
 	Tok_Spec_Internal_Linkage,
+	Tok_Spec_GB_Global,
+	Tok_Spec_GB_Inline,
+	Tok_Spec_GB_Internal_Linkage,
 	Tok_Spec_LocalPersist,
 	Tok_Spec_Mutable,
 	Tok_Spec_NeverInline,
@@ -4829,6 +4838,9 @@ inline Str toktype_to_str( TokType type )
 		{ "global",               sizeof( "global" ) - 1               },
 		{ "inline",               sizeof( "inline" ) - 1               },
 		{ "internal",             sizeof( "internal" ) - 1             },
+		{ "gb_global",            sizeof( "gb_global" ) - 1            },
+		{ "gb_inline",            sizeof( "gb_inline" ) - 1            },
+		{ "gb_internal",          sizeof( "gb_internal" ) - 1          },
 		{ "local_persist",        sizeof( "local_persist" ) - 1        },
 		{ "mutable",              sizeof( "mutable" ) - 1              },
 		{ "neverinline",          sizeof( "neverinline" ) - 1          },
@@ -20340,6 +20352,7 @@ case Tok_Spec_Constinit:   \
 case Tok_Spec_Explicit:    \
 case Tok_Spec_ForceInline: \
 case Tok_Spec_Inline:      \
+case Tok_Spec_GB_Inline:   \
 case Tok_Spec_Mutable:     \
 case Tok_Spec_NeverInline: \
 case Tok_Spec_Static:      \
@@ -20351,6 +20364,7 @@ case Spec_Constexpr:   \
 case Spec_Constinit:   \
 case Spec_Explicit:    \
 case Spec_Inline:      \
+case Spec_GB_Inline:   \
 case Spec_ForceInline: \
 case Spec_Mutable:     \
 case Spec_NeverInline: \
@@ -20367,6 +20381,9 @@ case Tok_Spec_ForceInline:      \
 case Tok_Spec_Global:           \
 case Tok_Spec_Inline:           \
 case Tok_Spec_Internal_Linkage: \
+case Tok_Spec_GB_Global:           \
+case Tok_Spec_GB_Inline:           \
+case Tok_Spec_GB_Internal_Linkage: \
 case Tok_Spec_NeverInline:      \
 case Tok_Spec_Static
 
@@ -20375,9 +20392,12 @@ case Spec_Constexpr:        \
 case Spec_Constinit:        \
 case Spec_ForceInline:      \
 case Spec_Global:           \
-case Spec_External_Linkage: \
 case Spec_Internal_Linkage: \
 case Spec_Inline:           \
+case Spec_GB_Global:           \
+case Spec_GB_Internal_Linkage: \
+case Spec_GB_Inline:           \
+case Spec_External_Linkage: \
 case Spec_Mutable:          \
 case Spec_NeverInline:      \
 case Spec_Static:           \
@@ -20386,6 +20406,7 @@ case Spec_Volatile
 #define GEN_PARSER_FRIEND_ALLOWED_SPECIFIERS_CASES \
 case Spec_Const:       \
 case Spec_Inline:      \
+case Spec_GB_Inline:      \
 case Spec_ForceInline
 
 #define GEN_PARSER_FUNCTION_ALLOWED_SPECIFIERS_CASES \
@@ -20393,9 +20414,11 @@ case Spec_Const:            \
 case Spec_Consteval:        \
 case Spec_Constexpr:        \
 case Spec_External_Linkage: \
-case Spec_Internal_Linkage: \
 case Spec_ForceInline:      \
+case Spec_Internal_Linkage: \
 case Spec_Inline:           \
+case Spec_GB_Internal_Linkage: \
+case Spec_GB_Inline:           \
 case Spec_NeverInline:      \
 case Spec_Static
 
@@ -20404,6 +20427,7 @@ case Spec_Const:       \
 case Spec_Constexpr:   \
 case Spec_ForceInline: \
 case Spec_Inline:      \
+case Spec_GB_Inline:      \
 case Spec_NeverInline: \
 case Spec_Static
 
@@ -20414,6 +20438,8 @@ case Spec_Constinit:        \
 case Spec_External_Linkage: \
 case Spec_Global:           \
 case Spec_Inline:           \
+case Spec_GB_Global:           \
+case Spec_GB_Inline:           \
 case Spec_ForceInline:      \
 case Spec_Local_Persist:    \
 case Spec_Mutable:          \
@@ -20428,6 +20454,8 @@ case Spec_Constinit:        \
 case Spec_External_Linkage: \
 case Spec_Global:           \
 case Spec_Inline:           \
+case Spec_GB_Global:           \
+case Spec_GB_Inline:           \
 case Spec_Local_Persist:    \
 case Spec_Mutable:          \
 case Spec_Static:           \

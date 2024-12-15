@@ -159,8 +159,23 @@ int gen_main()
 	gen::init(& ctx);
 	log_fmt("Generating code for Odin's src\n");
 
-	Str str_GB_STATIC_ASSERT = txt("GB_STATIC_ASSERT(");
-	_ctx->PreprocessorDefines.append( cache_str(str_GB_STATIC_ASSERT) );
+	register_macros( args(
+		(Macro {txt("GB_STATIC_ASSERT"),     MT_Statement,  MF_Functional }),
+		(Macro {txt("TOKEN_KIND"),           MT_Expression, MF_Functional }),
+		(Macro {txt("TOKEN_KINDS"),          MT_Statement,  MF_Null       }),
+		(Macro {txt("PARSER_MAX_FIX_COUNT"), MT_Expression, MF_Null       }),
+		(Macro {txt("AST_KINDS"),            MT_Statement,  MF_Null       }),
+		(Macro {txt("AST_KIND"),             MT_Expression, MF_Functional }),
+		(Macro {txt("ast_node"),             MT_Expression, MF_Functional }),
+		(Macro {txt("case_ast_node"),        MT_Expression, MF_Functional }),
+		(Macro {txt("case_end"),             MT_Expression, MF_Null       }),
+		(Macro {txt("TYPE_KIND"),            MT_Expression, MF_Functional }),
+		(Macro {txt("TYPE_KINDS"),           MT_Statement,  MF_Null       }),
+		(Macro {txt("FAILURE_SIZE"),         MT_Expression, MF_Null       }),
+		(Macro {txt("FAILURE_ALIGNMENT"),    MT_Expression, MF_Null       }),
+		(Macro {txt("_ARRAY_FIELD_CASE_IF"), MT_Statement,  MF_Functional }),
+		(Macro {txt("_ARRAY_FIELD_CASE"),    MT_Expression, MF_Functional })
+	));
 
 	// Remove TOKEN_KINDS usage in tokenizer.cpp
 	// Note this doesn't account for an already swapped file. Make sure to discard changes or shut this path off if already generated.
