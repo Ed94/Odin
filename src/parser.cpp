@@ -5670,6 +5670,7 @@ gb_internal void parser_add_foreign_file_to_process(Parser *p, AstPackage *pkg, 
 	thread_pool_add_task(foreign_file_worker_proc, wd);
 }
 
+// NOTE(Ed) - Sectr Fork: Added this in for monolothic package support
 gb_internal ReadDirectoryError read_directory_recursive(String path, Array<FileInfo> *fi, String const &FILE_EXT, bool is_monolihtic = false) {
 	Array<FileInfo> sub_list = {};
 	ReadDirectoryError rd_err = read_directory(path, &sub_list);
@@ -5684,7 +5685,7 @@ gb_internal ReadDirectoryError read_directory_recursive(String path, Array<FileI
 	String ext = path_extension(sub_list[0].name);
 	bool monolithic_specified = false;
 	if (is_monolihtic || ext == FILE_EXT_MONLITHIC) {
-		// ALl subdirectories for this package cannot have nested packages, they'll all be considered part of the same package
+		// All subdirectories for this package cannot have nested packages, they will all be considered part of the same package
 		monolithic_specified = true;
 	}
 	for (FileInfo sub_fi : sub_list) {
@@ -5740,7 +5741,7 @@ gb_internal AstPackage *try_add_import_path(Parser *p, String path, String const
 		return pkg;
 	}
 
-
+	// NOTE(Ed) - Sectr Fork: Added recusive support for monolithic packages
 	Array<FileInfo> list = {};
 	ReadDirectoryError rd_err;
 	rd_err = read_directory_recursive( path, &list, FILE_EXT );

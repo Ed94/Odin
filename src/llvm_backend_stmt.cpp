@@ -2571,6 +2571,80 @@ gb_internal void lb_build_stmt(lbProcedure *p, Ast *node) {
 	case_end;
 
 	case_ast_node(us, UsingStmt, node);
+	{
+		// NOTE(Ed) - Sectr Fork: Added this in for debubability.
+		// Will add a local ptr variable referencing every exposed field into the stack frame
+
+		// Don't add for debug builds
+		if (p->debug_info == nullptr) {
+			return;
+		}
+
+		for ( Ast* ast_field :  us->list )
+		{
+			if (is_blank_ident(ast_field)) {
+				continue;
+			}
+
+			GB_ASSERT(ast_field->kind == Ast_Ident);
+			Entity*  entity_field = entity_of_node(ast_field);
+			TokenPos pos          = ast_token(ast_field).pos;
+
+			GB_ASSERT_MSG(entity_field != nullptr, "\n% missing child entity %.*s for using statement"
+				, token_pos_to_string(pos), LIT(ast_field->Ident.token.string)
+			);
+		}
+
+		TEMPORARY_ALLOCATOR_GUARD();
+
+		for ( Ast* ast_var :  us->list )
+		{
+			if (is_blank_ident(ast_var)) {
+				continue;
+			}
+
+			Entity* ent_var = entity_of_node(ast_var);
+			if (ent_var->kind != Entity_Variable ) {
+				continue;
+			}
+			Type* type = base_type(type_deref(ent_var->type));
+			if (type == nullptr) {
+				continue;
+			}
+
+			// Get base variable address
+			// lbValue var_ptr = lb_build_addr_ptr(p, ast_var);
+
+			Type* struct_type = base_type(type_deref(ent_var->type));
+			if (struct_type == nullptr || struct_type->kind != Type_Struct) {
+				continue;
+			}
+
+			// Get base struct pointer
+			lbValue struct_ptr = lb_build_addr_ptr(p, ast_var);
+
+			wait_signal_until_available(& struct_type->Struct.fields_wait_signal);
+			for_array(id, struct_type->Struct.fields)
+			{
+				Entity *field = struct_type->Struct.fields [ id ];
+				if (field->kind != Entity_Variable || ! (field->flags & EntityFlag_Field)) {
+					continue;
+				}
+
+				Selection sel = lookup_field_from_index(struct_type, field->Variable.field_index);
+				if (sel.entity == nullptr) {
+					continue;
+				}
+
+				Type* type_ptr_field_type = alloc_type_pointer(field->type);
+
+				// Create debug variable for field access
+				lbAddr  field_debug_ptr = lb_add_local          (p, type_ptr_field_type, field, false);
+				lbValue field_ptr       = lb_emit_deep_field_gep(p, struct_ptr, sel);
+				lb_addr_store(p, field_debug_ptr, field_ptr);
+			}
+		}
+	}
 	case_end;
 
 	case_ast_node(ws, WhenStmt, node);
