@@ -1,3 +1,16 @@
+# Sectr Fork
+
+This is a fork of the compiler intended for usage with [SectrPrototype](https://github.com/Ed94/SectrPrototype)
+
+There were additions made for quality of life reasons:
+
+* Added #region, #endregion directives support for editors (I may remove this...)
+* I added support for 'monlithic packages' or 'uniform-across-subdirectories packages'. It allows me to organize the main package with sub-directories. (Could be flag instead but making it a file flag works well)
+* Added the ability to debug using statements on structs (fields get dumped to the stack as ptr refs)
+  * They show up as `struct_name::field_name`
+
+---
+
 <p align="center">
     <img src="misc/logo-slim.png" alt="Odin logo" style="width:65%">
     <br/>
