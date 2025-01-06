@@ -2524,6 +2524,19 @@ gb_internal void lb_build_assign_stmt(lbProcedure *p, AstAssignStmt *as) {
 	}
 }
 
+// NOTE(Ed) - Sectr Fork: Added for namespaced names on using statements in debug
+// Format: struct_name::field_name
+// I tired todo struct_name.field_name it didn't work (nor using struct_name.field_name)
+char* debug_lb_make_using_struct_ref_identifier(gbAllocator allocator, String struct_name, String field_name)
+{
+    isize name_len   = 6 + struct_name.len + 1 + field_name.len + 1;
+    char* debug_name = gb_alloc_array(allocator, char, name_len);
+    gb_snprintf(debug_name, name_len, "%.*s::%.*s"
+		, LIT(struct_name)
+		, LIT(field_name)
+	);
+    return debug_name;
+}
 
 gb_internal void lb_build_stmt(lbProcedure *p, Ast *node) {
 	Ast *prev_stmt = p->curr_stmt;
@@ -2573,7 +2586,7 @@ gb_internal void lb_build_stmt(lbProcedure *p, Ast *node) {
 	case_ast_node(us, UsingStmt, node);
 	{
 		// NOTE(Ed) - Sectr Fork: Added this in for debubability.
-		// Will add a local ptr variable referencing every exposed field into the stack frame
+		// Will add a local ptr variable referencing for every exposed field into the stack frame
 
 		// Don't add for debug builds
 		if (p->debug_info == nullptr) {
@@ -2612,13 +2625,12 @@ gb_internal void lb_build_stmt(lbProcedure *p, Ast *node) {
 				continue;
 			}
 
-			// Get base variable address
-			// lbValue var_ptr = lb_build_addr_ptr(p, ast_var);
-
 			Type* struct_type = base_type(type_deref(ent_var->type));
 			if (struct_type == nullptr || struct_type->kind != Type_Struct) {
 				continue;
 			}
+
+			String struct_name = ent_var->token.string;
 
 			// Get base struct pointer
 			lbValue struct_ptr = lb_build_addr_ptr(p, ast_var);
@@ -2626,21 +2638,24 @@ gb_internal void lb_build_stmt(lbProcedure *p, Ast *node) {
 			wait_signal_until_available(& struct_type->Struct.fields_wait_signal);
 			for_array(id, struct_type->Struct.fields)
 			{
-				Entity *field = struct_type->Struct.fields [ id ];
+				Entity* field = struct_type->Struct.fields [ id ];
 				if (field->kind != Entity_Variable || ! (field->flags & EntityFlag_Field)) {
-					continue;
-				}
-
-				Selection sel = lookup_field_from_index(struct_type, field->Variable.field_index);
-				if (sel.entity == nullptr) {
 					continue;
 				}
 
 				Type* type_ptr_field_type = alloc_type_pointer(field->type);
 
+				Token  debug_token  = field->token;
+				char*  debug_name   = debug_lb_make_using_struct_ref_identifier(temporary_allocator(), struct_name, field->token.string);
+				debug_token.string = make_string((u8*)debug_name, gb_strlen(debug_name));
+
+				Entity*   debug_field = alloc_entity_variable(field->scope, debug_token, field->type);
+				Selection sel_field   = lookup_field_from_index(struct_type, field->Variable.field_index);
+
 				// Create debug variable for field access
-				lbAddr  field_debug_ptr = lb_add_local          (p, type_ptr_field_type, field, false);
-				lbValue field_ptr       = lb_emit_deep_field_gep(p, struct_ptr, sel);
+				lbAddr  field_debug_ptr = lb_add_local          (p, type_ptr_field_type, debug_field, false);
+				// lbAddr  field_debug_ptr = lb_add_local          (p, type_ptr_field_type, field, false);
+				lbValue field_ptr       = lb_emit_deep_field_gep(p, struct_ptr, sel_field);
 				lb_addr_store(p, field_debug_ptr, field_ptr);
 			}
 		}
