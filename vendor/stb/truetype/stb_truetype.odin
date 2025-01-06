@@ -200,9 +200,9 @@ foreign stbtt {
 	// then call RenderIntoRects repeatedly. This may result in a
 	// better packing than calling PackFontRanges multiple times
 	// (or it may not).
-	PackFontRangesGatherRects     :: proc(spc: ^pack_context, info: ^fontinfo, ranges: ^pack_range, num_ranges: c.int, rects: [^]stbrp.Rect) -> c.int ---
+	PackFontRangesGatherRects     :: proc(spc: ^pack_context, #by_ptr info: fontinfo, ranges: ^pack_range, num_ranges: c.int, rects: [^]stbrp.Rect) -> c.int ---
 	PackFontRangesPackRects       :: proc(spc: ^pack_context, rects: [^]stbrp.Rect, num_rects: c.int) --- 
-	PackFontRangesRenderIntoRects :: proc(spc: ^pack_context, info: ^fontinfo, ranges: ^pack_range, num_ranges: c.int, rects: [^]stbrp.Rect) -> c.int --- 
+	PackFontRangesRenderIntoRects :: proc(spc: ^pack_context, #by_ptr info: fontinfo, ranges: ^pack_range, num_ranges: c.int, rects: [^]stbrp.Rect) -> c.int --- 
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -265,7 +265,7 @@ foreign stbtt {
 	// going to process, then use glyph-based functions instead of the
 	// codepoint-based functions.
 	// Returns 0 if the character codepoint is not defined in the font.
-	FindGlyphIndex :: proc(info: ^fontinfo, unicode_codepoint: rune) -> c.int ---
+	FindGlyphIndex :: proc(#by_ptr info: fontinfo, unicode_codepoint: rune) -> c.int ---
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -281,12 +281,12 @@ foreign stbtt {
 	// and computing:
 	//       scale = pixels / (ascent - descent)
 	// so if you prefer to measure height by the ascent only, use a similar calculation.
-	ScaleForPixelHeight :: proc(info: ^fontinfo, pixels: f32) -> f32 ---
+	ScaleForPixelHeight :: proc(#by_ptr info: fontinfo, pixels: f32) -> f32 ---
 	
 	// computes a scale factor to produce a font whose EM size is mapped to
 	// 'pixels' tall. This is probably what traditional APIs compute, but
 	// I'm not positive.
-	ScaleForMappingEmToPixels :: proc(info: ^fontinfo, pixels: f32) -> f32 ---
+	ScaleForMappingEmToPixels :: proc(#by_ptr info: fontinfo, pixels: f32) -> f32 ---
 	
 	// ascent is the coordinate above the baseline the font extends; descent
 	// is the coordinate below the baseline the font extends (i.e. it is typically negative)
@@ -294,32 +294,32 @@ foreign stbtt {
 	// so you should advance the vertical position by "*ascent - *descent + *lineGap"
 	//   these are expressed in unscaled coordinates, so you must multiply by
 	//   the scale factor for a given size
-	GetFontVMetrics :: proc(info: ^fontinfo, ascent, descent, lineGap: ^c.int) ---
+	GetFontVMetrics :: proc(#by_ptr info: fontinfo, ascent, descent, lineGap: ^c.int) ---
 	
 	// analogous to GetFontVMetrics, but returns the "typographic" values from the OS/2
 	// table (specific to MS/Windows TTF files).
 	//
 	// Returns 1 on success (table present), 0 on failure.
-	GetFontVMetricsOS2 :: proc(info: ^fontinfo, typoAscent, typoDescent, typoLineGap: ^c.int) -> b32 ---
+	GetFontVMetricsOS2 :: proc(#by_ptr info: fontinfo, typoAscent, typoDescent, typoLineGap: ^c.int) -> b32 ---
 	
 	// the bounding box around all possible characters
-	GetFontBoundingBox :: proc(info: ^fontinfo, x0, y0, x1, y1: ^c.int) ---
+	GetFontBoundingBox :: proc(#by_ptr info: fontinfo, x0, y0, x1, y1: ^c.int) ---
 	
 	// leftSideBearing is the offset from the current horizontal position to the left edge of the character
 	// advanceWidth is the offset from the current horizontal position to the next horizontal position
 	//   these are expressed in unscaled coordinates
-	GetCodepointHMetrics :: proc(info: ^fontinfo, codepoint: rune, advanceWidth, leftSideBearing: ^c.int) ---
+	GetCodepointHMetrics :: proc(#by_ptr info: fontinfo, codepoint: rune, advanceWidth, leftSideBearing: ^c.int) ---
 	
 	// an additional amount to add to the 'advance' value between ch1 and ch2
-	GetCodepointKernAdvance :: proc(info: ^fontinfo, ch1, ch2: rune) -> (advance: c.int) ---
+	GetCodepointKernAdvance :: proc(#by_ptr info: fontinfo, ch1, ch2: rune) -> (advance: c.int) ---
 	
 	// Gets the bounding box of the visible part of the glyph, in unscaled coordinates
-	GetCodepointBox :: proc(info: ^fontinfo, codepoint: rune, x0, y0, x1, y1: ^c.int) -> c.int ---
+	GetCodepointBox :: proc(#by_ptr info: fontinfo, codepoint: rune, x0, y0, x1, y1: ^c.int) -> c.int ---
 	
 	// as above, but takes one or more glyph indices for greater efficiency
-	GetGlyphHMetrics    :: proc(info: ^fontinfo, glyph_index: c.int, advanceWidth, leftSideBearing: ^c.int) ---
-	GetGlyphKernAdvance :: proc(info: ^fontinfo, glyph1, glyph2: c.int) -> c.int ---
-	GetGlyphBox         :: proc(info: ^fontinfo, glyph_index: c.int, x0, y0, x1, y1: ^c.int) -> c.int ---
+	GetGlyphHMetrics    :: proc(#by_ptr info: fontinfo, glyph_index: c.int, advanceWidth, leftSideBearing: ^c.int) ---
+	GetGlyphKernAdvance :: proc(#by_ptr info: fontinfo, glyph1, glyph2: c.int) -> c.int ---
+	GetGlyphBox         :: proc(#by_ptr info : fontinfo, glyph_index: c.int, x0, y0, x1, y1: ^c.int) -> c.int ---
 }
 
 kerningentry :: struct {
@@ -333,8 +333,8 @@ foreign stbtt {
 	// Retrieves a complete list of all of the kerning pairs provided by the font
 	// stbtt_GetKerningTable never writes more than table_length entries and returns how many entries it did write.
 	// The table will be sorted by (a.glyph1 == b.glyph1)?(a.glyph2 < b.glyph2):(a.glyph1 < b.glyph1)
-	GetKerningTableLength :: proc(info: ^fontinfo) -> c.int ---
-	GetKerningTable       :: proc(info: ^fontinfo, table: [^]kerningentry, table_length: c.int) -> c.int ---
+	GetKerningTableLength :: proc(#by_ptr info: fontinfo) -> c.int ---
+	GetKerningTable       :: proc(#by_ptr info: fontinfo, table: [^]kerningentry, table_length: c.int) -> c.int ---
 }
 
 
@@ -361,7 +361,7 @@ vertex :: struct {
 @(default_calling_convention="c", link_prefix="stbtt_")
 foreign stbtt {
 	// returns true if nothing is drawn for this glyph
-	IsGlyphEmpty :: proc(info: ^fontinfo, glyph_index: c.int) -> b32 ---
+	IsGlyphEmpty :: proc(#by_ptr info: fontinfo, glyph_index: c.int) -> b32 ---
 
 	// returns # of vertices and fills *vertices with the pointer to them
 	//   these are expressed in "unscaled" coordinates
@@ -372,17 +372,17 @@ foreign stbtt {
 	// draws a line from previous endpoint to its x,y; a curveto
 	// draws a quadratic bezier from previous endpoint to
 	// its x,y, using cx,cy as the bezier control point.
-	GetCodepointShape :: proc(info: ^fontinfo, unicode_codepoint: rune, vertices: ^[^]vertex) -> c.int ---
-	GetGlyphShape     :: proc(info: ^fontinfo, glyph_index:      c.int, vertices: ^[^]vertex) -> c.int ---
+	GetCodepointShape :: proc(#by_ptr info: fontinfo, unicode_codepoint: rune, vertices: ^[^]vertex) -> c.int ---
+	GetGlyphShape     :: proc(#by_ptr info: fontinfo, glyph_index:      c.int, vertices: ^[^]vertex) -> c.int ---
 
 	// frees the data allocated above
-	FreeShape :: proc(info: ^fontinfo, vertices: [^]vertex) ---
+	FreeShape :: proc(#by_ptr info: fontinfo, vertices: [^]vertex) ---
 
 	// fills svg with the character's SVG data.
 	// returns data size or 0 if SVG not found.
-	FindSVGDoc       :: proc(info: ^fontinfo, gl: b32) -> [^]byte ---
-	GetCodepointSVG  :: proc(info: ^fontinfo, unicode_codepoint: rune, svg: ^cstring) -> c.int ---
-	GetGlyphSVG      :: proc(info: ^fontinfo, gl: b32, svg: ^cstring) -> c.int ---
+	FindSVGDoc       :: proc(#by_ptr info: fontinfo, gl: b32) -> [^]byte ---
+	GetCodepointSVG  :: proc(#by_ptr info: fontinfo, unicode_codepoint: rune, svg: ^cstring) -> c.int ---
+	GetGlyphSVG      :: proc(#by_ptr info: fontinfo, gl: b32, svg: ^cstring) -> c.int ---
 }
 
 
@@ -408,46 +408,46 @@ foreign stbtt {
 	// which is stored left-to-right, top-to-bottom.
 	//
 	// xoff/yoff are the offset it pixel space from the glyph origin to the top-left of the bitmap
-	GetCodepointBitmap :: proc(info: ^fontinfo, scale_x, scale_y: f32, codepoint: rune, width, height, xoff, yoff: ^c.int) -> [^]byte ---
+	GetCodepointBitmap :: proc(#by_ptr info: fontinfo, scale_x, scale_y: f32, codepoint: rune, width, height, xoff, yoff: ^c.int) -> [^]byte ---
 
 	// the same as stbtt_GetCodepoitnBitmap, but you can specify a subpixel
 	// shift for the character
-	GetCodepointBitmapSubpixel :: proc(info: ^fontinfo, scale_x, scale_y, shift_x, shift_y: f32, codepoint: rune, width, height, xoff, yoff: ^c.int) -> [^]byte ---
+	GetCodepointBitmapSubpixel :: proc(#by_ptr info: fontinfo, scale_x, scale_y, shift_x, shift_y: f32, codepoint: rune, width, height, xoff, yoff: ^c.int) -> [^]byte ---
 
 	// the same as stbtt_GetCodepointBitmap, but you pass in storage for the bitmap
 	// in the form of 'output', with row spacing of 'out_stride' bytes. the bitmap
 	// is clipped to out_w/out_h bytes. Call stbtt_GetCodepointBitmapBox to get the
 	// width and height and positioning info for it first.
-	MakeCodepointBitmap :: proc(info: ^fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y: f32, codepoint: rune) ---
+	MakeCodepointBitmap :: proc(#by_ptr info: fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y: f32, codepoint: rune) ---
 
 	// same as stbtt_MakeCodepointBitmap, but you can specify a subpixel
 	// shift for the character
-	MakeCodepointBitmapSubpixel :: proc(info: ^fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, codepoint: rune) ---
+	MakeCodepointBitmapSubpixel :: proc(#by_ptr info: fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, codepoint: rune) ---
 
 	// same as stbtt_MakeCodepointBitmapSubpixel, but prefiltering
 	// is performed (see stbtt_PackSetOversampling)
-	MakeCodepointBitmapSubpixelPrefilter :: proc(info: ^fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, oversample_x, oversample_y: b32, sub_x, sub_y: ^f32, codepoint: rune) ---
+	MakeCodepointBitmapSubpixelPrefilter :: proc(#by_ptr info: fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, oversample_x, oversample_y: b32, sub_x, sub_y: ^f32, codepoint: rune) ---
 
 	// get the bbox of the bitmap centered around the glyph origin; so the
 	// bitmap width is ix1-ix0, height is iy1-iy0, and location to place
 	// the bitmap top left is (leftSideBearing*scale,iy0).
 	// (Note that the bitmap uses y-increases-down, but the shape uses
 	// y-increases-up, so CodepointBitmapBox and CodepointBox are inverted.)
-	GetCodepointBitmapBox :: proc(font: ^fontinfo, codepoint: rune, scale_x, scale_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
+	GetCodepointBitmapBox :: proc(#by_ptr font: fontinfo, codepoint: rune, scale_x, scale_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
 
 	// same as stbtt_GetCodepointBitmapBox, but you can specify a subpixel
 	// shift for the character
-	GetCodepointBitmapBoxSubpixel :: proc(font: ^fontinfo, codepoint: rune, scale_x, scale_y, shift_x, shift_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
+	GetCodepointBitmapBoxSubpixel :: proc(#by_ptr font: fontinfo, codepoint: rune, scale_x, scale_y, shift_x, shift_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
 
 	// the following functions are equivalent to the above functions, but operate
 	// on glyph indices instead of Unicode codepoints (for efficiency)
-	GetGlyphBitmap                   :: proc(info: ^fontinfo, scale_x, scale_y: f32, glyph: c.int, width, height, xoff, yoff: ^c.int) -> [^]byte ---
-	GetGlyphBitmapSubpixel           :: proc(info: ^fontinfo, scale_x, scale_y, shift_x, shift_y: f32, glyph: c.int, width, height, xoff, yoff: ^c.int) -> [^]byte ---
-	MakeGlyphBitmap                  :: proc(info: ^fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y: f32, glyph: c.int) ---
-	MakeGlyphBitmapSubpixel          :: proc(info: ^fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, glyph: c.int) ---
-	MakeGlyphBitmapSubpixelPrefilter :: proc(info: ^fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, oversample_x, oversample_y: c.int, sub_x, sub_y: ^f32, glyph: c.int) ---
-	GetGlyphBitmapBox                :: proc(font: ^fontinfo, glyph: c.int, scale_x, scale_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
-	GetGlyphBitmapBoxSubpixel        :: proc(font: ^fontinfo, glyph: c.int, scale_x, scale_y, shift_x, shift_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
+	GetGlyphBitmap                   :: proc(#by_ptr info: fontinfo, scale_x, scale_y: f32, glyph: c.int, width, height, xoff, yoff: ^c.int) -> [^]byte ---
+	GetGlyphBitmapSubpixel           :: proc(#by_ptr info: fontinfo, scale_x, scale_y, shift_x, shift_y: f32, glyph: c.int, width, height, xoff, yoff: ^c.int) -> [^]byte ---
+	MakeGlyphBitmap                  :: proc(#by_ptr info: fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y: f32, glyph: c.int) ---
+	MakeGlyphBitmapSubpixel          :: proc(#by_ptr info: fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, glyph: c.int) ---
+	MakeGlyphBitmapSubpixelPrefilter :: proc(#by_ptr info: fontinfo, output: [^]byte, out_w, out_h, out_stride: c.int, scale_x, scale_y, shift_x, shift_y: f32, oversample_x, oversample_y: c.int, sub_x, sub_y: ^f32, glyph: c.int) ---
+	GetGlyphBitmapBox                :: proc(#by_ptr font: fontinfo, glyph: c.int, scale_x, scale_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
+	GetGlyphBitmapBoxSubpixel        :: proc(#by_ptr font: fontinfo, glyph: c.int, scale_x, scale_y, shift_x, shift_y: f32, ix0, iy0, ix1, iy1: ^c.int) ---
 	
 	// rasterize a shape with quadratic beziers into a bitmap
 	Rasterize :: proc(result: ^_bitmap,        // 1-channel bitmap to draw into
@@ -520,8 +520,8 @@ foreign stbtt {
 	// The algorithm has not been optimized at all, so expect it to be slow
 	// if computing lots of characters or very large sizes.
 
-	GetGlyphSDF     :: proc(info: ^fontinfo, scale: f32, glyph, padding: c.int, onedge_value: u8, pixel_dist_scale: f32, width, height, xoff, yoff: ^c.int) -> [^]byte ---
-	GetCodepointSDF :: proc(info: ^fontinfo, scale: f32, codepoint, padding: c.int, onedge_value: u8, pixel_dist_scale: f32, width, height, xoff, yoff: ^c.int) -> [^]byte ---
+	GetGlyphSDF     :: proc(#by_ptr info: fontinfo, scale: f32, glyph, padding: c.int, onedge_value: u8, pixel_dist_scale: f32, width, height, xoff, yoff: ^c.int) -> [^]byte ---
+	GetCodepointSDF :: proc(#by_ptr info: fontinfo, scale: f32, codepoint, padding: c.int, onedge_value: u8, pixel_dist_scale: f32, width, height, xoff, yoff: ^c.int) -> [^]byte ---
 }
 
 
@@ -571,7 +571,7 @@ foreign stbtt {
 	// some of the values for the IDs are below; for more see the truetype spec:
 	//     http://developer.apple.com/textfonts/TTRefMan/RM06/Chap6name.html
 	//     http://www.microsoft.com/typography/otspec/name.htm
-	GetFontNameString :: proc(font: ^fontinfo, length: ^c.int, platformID: PLATFORM_ID, encodingID, languageID, nameID: c.int) -> cstring ---
+	GetFontNameString :: proc(#by_ptr font: fontinfo, length: ^c.int, platformID: PLATFORM_ID, encodingID, languageID, nameID: c.int) -> cstring ---
 }
 
 
