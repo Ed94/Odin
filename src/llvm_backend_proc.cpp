@@ -125,6 +125,10 @@ gb_internal lbProcedure *lb_create_procedure(lbModule *m, Entity *entity, bool i
 	// map_init(&p->selector_addr,    0);
 	// map_init(&p->tuple_fix_map,    0);
 
+	if (p->entity != nullptr && p->entity->Procedure.uses_branch_location) {
+		p->uses_branch_location = true;
+	}
+
 	if (p->is_foreign) {
 		lb_add_foreign_library_path(p->module, entity->Procedure.foreign_library);
 	}
@@ -757,7 +761,7 @@ gb_internal void lb_end_procedure_body(lbProcedure *p) {
 	if (p->type->Proc.result_count == 0) {
 		instr = LLVMGetLastInstruction(p->curr_block->block);
 		if (!lb_is_instr_terminating(instr)) {
-			lb_emit_defer_stmts(p, lbDeferExit_Return, nullptr);
+			lb_emit_defer_stmts(p, lbDeferExit_Return, nullptr, p->body);
 			lb_set_debug_position_to_procedure_end(p);
 			LLVMBuildRetVoid(p->builder);
 		}
@@ -1134,10 +1138,6 @@ gb_internal lbValue lb_emit_call(lbProcedure *p, lbValue value, Array<lbValue> c
 			for (isize i = processed_args.count; i < args.count; i++) {
 				array_add(&processed_args, args[i]);
 			}
-		}
-
-		if (inlining == ProcInlining_none) {
-			inlining = p->inlining;
 		}
 
 		Type *rt = reduce_tuple_to_single_type(results);

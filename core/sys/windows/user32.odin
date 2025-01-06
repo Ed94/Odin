@@ -51,6 +51,7 @@ foreign user32 {
 	IsWindowVisible :: proc(hwnd: HWND) -> BOOL ---
 	IsWindowEnabled :: proc(hwnd: HWND) -> BOOL ---
 	IsIconic :: proc(hwnd: HWND) -> BOOL ---
+	IsZoomed :: proc(hwnd: HWND) -> BOOL ---
 	BringWindowToTop :: proc(hWnd: HWND) -> BOOL ---
 	GetTopWindow :: proc(hWnd: HWND) -> HWND ---
 	SetForegroundWindow :: proc(hWnd: HWND) -> BOOL ---
@@ -548,7 +549,7 @@ RI_KEY_TERMSRV_SHADOW :: 0x10
 MOUSE_MOVE_RELATIVE :: 0x00
 MOUSE_MOVE_ABSOLUTE :: 0x01
 MOUSE_VIRTUAL_DESKTOP :: 0x02
-MOUSE_ATTRIUBTTES_CHANGED :: 0x04
+MOUSE_ATTRIBUTES_CHANGED :: 0x04
 MOUSE_MOVE_NOCOALESCE :: 0x08
 
 RI_MOUSE_BUTTON_1_DOWN :: 0x0001
