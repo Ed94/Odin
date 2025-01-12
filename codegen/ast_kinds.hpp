@@ -333,14 +333,15 @@ struct RangeStmt {
 
 char const* desc_UnrollRangeStmt = "unroll range statement";
 struct UnrollRangeStmt {
-	Scope *scope;
-	Token  unroll_token;
-	Token  for_token;
-	Ast   *val0;
-	Ast   *val1;
-	Token  in_token;
-	Ast   *expr;
-	Ast   *body;
+	Scope        *scope;
+	Token         unroll_token;
+	Slice<Ast *>  args;
+	Token         for_token;
+	Ast          *val0;
+	Ast          *val1;
+	Token         in_token;
+	Ast          *expr;
+	Ast          *body;
 };
 
 char const* desc_CaseClause = "case clause";
