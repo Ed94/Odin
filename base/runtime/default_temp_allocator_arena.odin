@@ -117,6 +117,7 @@ arena_alloc :: proc(arena: ^Arena, size, alignment: uint, loc := #caller_locatio
 		// if arena.backing_allocator.procedure == nil {
 		// 	arena.backing_allocator = default_allocator()
 		// }
+		assert(arena.backing_allocator.procedure != nil )
 
 		new_block := memory_block_alloc(arena.backing_allocator, block_size, alignment, loc) or_return
 		new_block.prev = arena.curr_block

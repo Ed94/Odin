@@ -40,6 +40,11 @@ when NO_DEFAULT_TEMP_ALLOCATOR {
 	                                    old_memory: rawptr, old_size: int, loc := #caller_location) -> (data: []byte, err: Allocator_Error) {
 
 		s := (^Default_Temp_Allocator)(allocator_data)
+		// Note(Ed) - Sectr Fork: The arena_alloc was originally doing this anyway, 
+		// but I'm moving it to here since I want to have it assert if this is not set there.
+		if s.arena.backing_allocator.procedure == nil {
+			s.arena.backing_allocator = default_allocator()
+		}
 		return arena_allocator_proc(&s.arena, mode, size, alignment, old_memory, old_size, loc)
 	}
 
