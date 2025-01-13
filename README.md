@@ -15,10 +15,14 @@ There were additions made for quality of life reasons:
     * base:runtime/core_builtin_soa.odin:`make_soa_aligned`, `_reserve_soa`
     * base:runtime/default_temp_allocator_arena.odin:`arena_alloc`
     * base:runtime/dynamic_array_internal.odin:`__dynamic_array_reserve`, `__dynamic_array_shrink`
-    * base:runtime/dynamic_map_internal.odin:`map_shrink_dynamic`
+    * base:runtime/dynamic_map_internal.odin:`map_reserve_dynamic`, `map_shrink_dynamic`
     * core:flags/internal_assignment.doin:`set_key_value`
     * core:mem/tracking_allocator.odin:`tracking_allocator_proc`
     * core:strings/intern.odin:`_intern_get_entry`
+  * Added debug breaks to the following:
+    * core:cbor/unmarshal.odin:`_unmarshal_map`
+    * core:json/unmarshal.odin:`unmarshal_object`
+
 
 ---
 
