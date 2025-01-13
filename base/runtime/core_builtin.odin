@@ -403,6 +403,7 @@ make_map_cap :: proc($T: typeid/map[$K]$E, #any_int capacity: int, allocator := 
 	make_map_expr_error_loc(loc, capacity)
 	context.allocator = allocator
 
+	m.allocator = allocator
 	err = reserve_map(&m, capacity, loc)
 	return
 }

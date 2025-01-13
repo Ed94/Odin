@@ -159,6 +159,7 @@ make_soa_dynamic_array_len :: proc($T: typeid/#soa[dynamic]$E, #any_int length: 
 @(builtin, require_results)
 make_soa_dynamic_array_len_cap :: proc($T: typeid/#soa[dynamic]$E, #any_int length, capacity: int, allocator := context.allocator, loc := #caller_location) -> (array: T, err: Allocator_Error) #optional_allocator_error {
 	context.allocator = allocator
+	array.allocator = allocator
 	reserve_soa(&array, capacity, loc) or_return
 	resize_soa(&array, length, loc) or_return
 	return array, nil
