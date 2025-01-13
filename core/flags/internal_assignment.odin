@@ -203,9 +203,14 @@ set_key_value :: proc(model: ^$T, parser: ^Parser, name, key, value: string) -> 
 		elem_backing: []byte
 		value_ptr: rawptr
 
-		if raw_map.allocator.procedure == nil {
-			raw_map.allocator = context.allocator
-		} else {
+
+		assert(raw_map.allocator.procedure != nil)
+		// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+		// if raw_map.allocator.procedure == nil {
+		// 	raw_map.allocator = context.allocator
+		// } 
+		// else
+		{
 			value_ptr = runtime.__dynamic_map_get(raw_map,
 				specific_type_info.map_info,
 				hash,

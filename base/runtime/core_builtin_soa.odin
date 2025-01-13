@@ -102,10 +102,11 @@ make_soa_aligned :: proc($T: typeid/#soa[]$E, #any_int length, alignment: int, a
 		total_size = align_forward_int(total_size, max_align)
 	}
 
-	allocator := allocator
-	if allocator.procedure == nil {
-		allocator = context.allocator
-	}
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// allocator := allocator
+	// if allocator.procedure == nil {
+	// 	allocator = context.allocator
+	// }
 	assert(allocator.procedure != nil)
 
 	new_bytes: []byte
@@ -215,9 +216,10 @@ _reserve_soa :: proc(array: ^$T/#soa[dynamic]$E, capacity: int, zero_memory: boo
 		return nil
 	}
 
-	if array.allocator.procedure == nil {
-		array.allocator = context.allocator
-	}
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// if array.allocator.procedure == nil {
+	// 	array.allocator = context.allocator
+	// }
 	assert(array.allocator.procedure != nil)
 
 	footer := raw_soa_footer(array)

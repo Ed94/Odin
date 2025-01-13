@@ -8,6 +8,17 @@ There were additions made for quality of life reasons:
 * I added support for 'monlithic packages' or 'uniform-across-subdirectories packages'. It allows me to organize the main package with sub-directories. (Could be flag instead but making it a file flag works well)
 * Added the ability to debug using statements on structs (fields get dumped to the stack as ptr refs)
   * They show up as `struct_name::field_name`
+* Remove implicit assignments for container allocators in the Base and Core packages
+  * I did not enjoy bug hunting a memory corruption because I mistakenly didn't properly initialize a core container with their designated initiatizer: new, make, or init.
+  * Affects the following:
+    * base:runtime/core_builtin.doin:`_reserve_dynamic_array`, `_resize_dynamic_array`, `_shrink_dynamic_array`
+    * base:runtime/core_builtin_soa.odin:`make_soa_aligned`, `_reserve_soa`
+    * base:runtime/default_temp_allocator_arena.odin:`arena_alloc`
+    * base:runtime/dynamic_array_internal.odin:`__dynamic_array_reserve`, `__dynamic_array_shrink`
+    * base:runtime/dynamic_map_internal.odin:`map_shrink_dynamic`
+    * core:flags/internal_assignment.doin:`set_key_value`
+    * core:mem/tracking_allocator.odin:`tracking_allocator_proc`
+    * core:strings/intern.odin:`_intern_get_entry`
 
 ---
 

@@ -786,9 +786,10 @@ _reserve_dynamic_array :: #force_inline proc(a: ^Raw_Dynamic_Array, size_of_elem
 		return nil
 	}
 
-	if a.allocator.procedure == nil {
-		a.allocator = context.allocator
-	}
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// if a.allocator.procedure == nil {
+	// 	a.allocator = context.allocator
+	// }
 	assert(a.allocator.procedure != nil)
 
 	old_size  := a.cap * size_of_elem
@@ -836,9 +837,10 @@ _resize_dynamic_array :: #force_inline proc(a: ^Raw_Dynamic_Array, size_of_elem,
 		return nil
 	}
 
-	if a.allocator.procedure == nil {
-		a.allocator = context.allocator
-	}
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// if a.allocator.procedure == nil {
+	// 	a.allocator = context.allocator
+	// }
 	assert(a.allocator.procedure != nil)
 
 	old_size  := a.cap  * size_of_elem
@@ -900,9 +902,10 @@ _shrink_dynamic_array :: proc(a: ^Raw_Dynamic_Array, size_of_elem, align_of_elem
 		return
 	}
 
-	if a.allocator.procedure == nil {
-		a.allocator = context.allocator
-	}
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// if a.allocator.procedure == nil {
+	// 	a.allocator = context.allocator
+	// }
 	assert(a.allocator.procedure != nil)
 
 	old_size := a.cap * size_of_elem

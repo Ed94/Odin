@@ -232,9 +232,11 @@ tracking_allocator_proc :: proc(
 	}
 	result_ptr := raw_data(result)
 
-	if data.allocation_map.allocator.procedure == nil {
-		data.allocation_map.allocator = context.allocator
-	}
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// if data.allocation_map.allocator.procedure == nil {
+	// 	data.allocation_map.allocator = context.allocator
+	// }
+	assert(data.allocation_map.allocator.procedure != nil)
 
 	switch mode {
 	case .Alloc, .Alloc_Non_Zeroed:

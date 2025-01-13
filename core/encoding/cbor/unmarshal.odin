@@ -692,6 +692,8 @@ _unmarshal_map :: proc(d: Decoder, v: any, ti: ^reflect.Type_Info, hdr: Header, 
 	case reflect.Type_Info_Map:
 		raw_map := (^mem.Raw_Map)(v.data)
 		if raw_map.allocator.procedure == nil {
+			// Note(Ed) - Sectr Fork: I'm premmtively leaving this here incase it happens...
+			runtime.debug_trap()
 			raw_map.allocator = context.allocator
 		}
 

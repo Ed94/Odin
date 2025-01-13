@@ -16,9 +16,11 @@ __dynamic_array_reserve :: proc(array_: rawptr, elem_size, elem_align: int, cap:
 
 	// NOTE(tetra, 2020-01-26): We set the allocator before earlying-out below, because user code is usually written
 	// assuming that appending/reserving will set the allocator, if it is not already set.
-	if array.allocator.procedure == nil {
-		array.allocator = context.allocator
-	}
+
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// if array.allocator.procedure == nil {
+	// 	array.allocator = context.allocator
+	// }
 	assert(array.allocator.procedure != nil)
 
 	if cap <= array.cap {
@@ -50,9 +52,11 @@ __dynamic_array_shrink :: proc(array_: rawptr, elem_size, elem_align: int, new_c
 
 	// NOTE(tetra, 2020-01-26): We set the allocator before earlying-out below, because user code is usually written
 	// assuming that appending/reserving will set the allocator, if it is not already set.
-	if array.allocator.procedure == nil {
-		array.allocator = context.allocator
-	}
+
+	// Note(Ed) - Sectr Fork: Not a fan. (I want it to assert)
+	// if array.allocator.procedure == nil {
+	// 	array.allocator = context.allocator
+	// }
 	assert(array.allocator.procedure != nil)
 
 	if new_cap > array.cap {
