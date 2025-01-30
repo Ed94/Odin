@@ -749,9 +749,15 @@ gb_internal void check_scope_usage_internal(Checker *c, Scope *scope, u64 vet_fl
 			// TODO(bill): When is a good size warn?
 			// Is >256 KiB good enough?
 			if (sz > 1ll<<18) {
-				gbString type_str = type_to_string(e->type);
-				warning(e->token, "Declaration of '%.*s' may cause a stack overflow due to its type '%s' having a size of %lld bytes", LIT(e->token.string), type_str, cast(long long)sz);
-				gb_string_free(type_str);
+				bool is_ref = false;
+				if((e->flags & EntityFlag_ForValue) != 0) {
+					is_ref = type_deref(e->Variable.for_loop_parent_type) != NULL;
+				}
+				if(!is_ref) {
+					gbString type_str = type_to_string(e->type);
+					warning(e->token, "Declaration of '%.*s' may cause a stack overflow due to its type '%s' having a size of %lld bytes", LIT(e->token.string), type_str, cast(long long)sz);
+					gb_string_free(type_str);
+				}
 			}
 		}
 	}
@@ -5034,6 +5040,12 @@ gb_internal DECL_ATTRIBUTE_PROC(foreign_import_decl_attribute) {
 			ac->extra_linker_flags = ev.value_string;
 		}
 		return true;
+	} else if (name == "ignore_duplicates") {
+		if (value != nullptr) {
+			error(elem, "Expected no parameter for '%.*s'", LIT(name));
+		}
+		ac->ignore_duplicates = true;
+		return true;
 	}
 	return false;
 }
@@ -5183,6 +5195,9 @@ gb_internal void check_add_foreign_import_decl(CheckerContext *ctx, Ast *decl) {
 	}
 	if (ac.foreign_import_priority_index != 0) {
 		e->LibraryName.priority_index = ac.foreign_import_priority_index;
+	}
+	if (ac.ignore_duplicates) {
+		e->LibraryName.ignore_duplicates = true;
 	}
 	String extra_linker_flags = string_trim_whitespace(ac.extra_linker_flags);
 	if (extra_linker_flags.len != 0) {
