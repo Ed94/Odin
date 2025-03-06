@@ -1119,7 +1119,7 @@ gb_internal lbValue lb_emit_call(lbProcedure *p, lbValue value, Array<lbValue> c
 					if (LLVMIsConstant(x.value)) {
 						// NOTE(bill): if the value is already constant, then just it as a global variable
 						// and pass it by pointer
-						lbAddr addr = lb_add_global_generated(p->module, original_type, x);
+						lbAddr addr = lb_add_global_generated_from_procedure(p, original_type, x);
 						lb_make_global_private_const(addr);
 						ptr = addr.addr;
 					} else {
@@ -1564,6 +1564,34 @@ gb_internal lbValue lb_build_builtin_simd_proc(lbProcedure *p, Ast *expr, TypeAn
 			return res;
 		}
 
+	case BuiltinProc_simd_extract_lsbs:
+	case BuiltinProc_simd_extract_msbs:
+		{
+			Type *vt = arg0.type;
+			GB_ASSERT(vt->kind == Type_SimdVector);
+
+			i64 elem_bits = 8*type_size_of(elem);
+			i64 num_elems = get_array_type_count(vt);
+
+			LLVMValueRef broadcast_value = arg0.value;
+			if (builtin_id == BuiltinProc_simd_extract_msbs) {
+				LLVMTypeRef word_type = lb_type(m, elem);
+				LLVMValueRef shift_value = llvm_splat_int(num_elems, word_type, elem_bits - 1);
+				broadcast_value = LLVMBuildAShr(p->builder, broadcast_value, shift_value, "");
+			}
+
+			LLVMTypeRef bitvec_type = LLVMVectorType(LLVMInt1TypeInContext(m->ctx), (unsigned)num_elems);
+			LLVMValueRef bitvec_value = LLVMBuildTrunc(p->builder, broadcast_value, bitvec_type, "");
+
+			LLVMTypeRef mask_type = LLVMIntTypeInContext(m->ctx, (unsigned)num_elems);
+			LLVMValueRef mask_value = LLVMBuildBitCast(p->builder, bitvec_value, mask_type, "");
+
+			LLVMTypeRef result_type = lb_type(m, res.type);
+			res.value = LLVMBuildZExtOrBitCast(p->builder, mask_value, result_type, "");
+
+			return res;
+		}
+
 
 	case BuiltinProc_simd_shuffle:
 		{
@@ -1846,7 +1874,7 @@ gb_internal lbValue lb_build_builtin_proc(lbProcedure *p, Ast *expr, TypeAndValu
 			LLVMValueRef backing_array = llvm_const_array(lb_type(m, t_load_directory_file), elements, count);
 
 			Type *array_type = alloc_type_array(t_load_directory_file, count);
-			lbAddr backing_array_addr = lb_add_global_generated(m, array_type, {backing_array, array_type}, nullptr);
+			lbAddr backing_array_addr = lb_add_global_generated_from_procedure(p, array_type, {backing_array, array_type});
 			lb_make_global_private_const(backing_array_addr);
 
 			LLVMValueRef backing_array_ptr = backing_array_addr.addr.value;
@@ -1854,7 +1882,7 @@ gb_internal lbValue lb_build_builtin_proc(lbProcedure *p, Ast *expr, TypeAndValu
 
 			LLVMValueRef const_slice = llvm_const_slice_internal(m, backing_array_ptr, LLVMConstInt(lb_type(m, t_int), count, false));
 
-			lbAddr addr = lb_add_global_generated(p->module, tv.type, {const_slice, t_load_directory_file_slice}, nullptr);
+			lbAddr addr = lb_add_global_generated_from_procedure(p, tv.type, {const_slice, t_load_directory_file_slice});
 			lb_make_global_private_const(addr);
 
 			return lb_addr_load(p, addr);
@@ -2548,8 +2576,8 @@ gb_internal lbValue lb_build_builtin_proc(lbProcedure *p, Ast *expr, TypeAndValu
 		}
 	case BuiltinProc_ptr_sub:
 		{
-			Type *elem0 = type_deref(type_of_expr(ce->args[0]));
-			Type *elem1 = type_deref(type_of_expr(ce->args[1]));
+			Type *elem0 = type_deref(type_of_expr(ce->args[0]), true);
+			Type *elem1 = type_deref(type_of_expr(ce->args[1]), true);
 			GB_ASSERT(are_types_identical(elem0, elem1));
 			Type *elem = elem0;
 
@@ -3280,13 +3308,14 @@ gb_internal lbValue lb_build_builtin_proc(lbProcedure *p, Ast *expr, TypeAndValu
 			{
 				isize max_len = 7+8+1;
 				name = gb_alloc_array(permanent_allocator(), char, max_len);
-				u32 id = m->gen->global_array_index.fetch_add(1);
+				u32 id = m->global_array_index.fetch_add(1);
 				isize len = gb_snprintf(name, max_len, "csbs$%x", id);
 				len -= 1;
 			}
 			LLVMTypeRef type = LLVMTypeOf(array);
 			LLVMValueRef global_data = LLVMAddGlobal(m->mod, type, name);
 			LLVMSetInitializer(global_data, array);
+			LLVMSetUnnamedAddress(global_data, LLVMGlobalUnnamedAddr);
 			LLVMSetLinkage(global_data, LLVMInternalLinkage);
 
 

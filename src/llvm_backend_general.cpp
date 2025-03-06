@@ -18,17 +18,36 @@ gb_global isize lb_global_type_info_member_tags_index    = 0;
 gb_internal void lb_init_module(lbModule *m, Checker *c) {
 	m->info = &c->info;
 
-	gbString module_name = gb_string_make(heap_allocator(), "odin_package");
-	if (m->file) {
-		module_name = gb_string_append_fmt(module_name, "-%u", m->file->id+1);
+
+	String name = build_context.build_paths[BuildPath_Output].name;
+	gbString module_name = gb_string_make(heap_allocator(), "");
+	module_name = gb_string_append_length(module_name, name.text, name.len);
+
+	if (!USE_SEPARATE_MODULES) {
+		// ignore suffixes
+	} else if (m->file) {
+		if (gb_string_length(module_name)) {
+			module_name = gb_string_appendc(module_name, "-");
+		}
+		if (m->pkg) {
+			module_name = gb_string_append_length(module_name, m->pkg->name.text, m->pkg->name.len);
+			module_name = gb_string_appendc(module_name, "-");
+		}
+		String filename = filename_from_path(m->file->filename);
+		module_name = gb_string_append_length(module_name, filename.text, filename.len);
 	} else if (m->pkg) {
-		module_name = gb_string_appendc(module_name, "-");
+		if (gb_string_length(module_name)) {
+			module_name = gb_string_appendc(module_name, "-");
+		}
 		module_name = gb_string_append_length(module_name, m->pkg->name.text, m->pkg->name.len);
-	} else if (USE_SEPARATE_MODULES) {
-		module_name = gb_string_appendc(module_name, "-builtin");
+	} else {
+		if (gb_string_length(module_name)) {
+			module_name = gb_string_appendc(module_name, "-");
+		}
+		module_name = gb_string_appendc(module_name, "builtin");
 	}
 
-	m->module_name = module_name ? module_name : "odin_package";
+	m->module_name = module_name;
 	m->ctx = LLVMContextCreate();
 	m->mod = LLVMModuleCreateWithNameInContext(m->module_name, m->ctx);
 	// m->debug_builder = nullptr;
@@ -67,10 +86,7 @@ gb_internal void lb_init_module(lbModule *m, Checker *c) {
 	string_map_init(&m->procedures);
 	string_map_init(&m->const_strings);
 	map_init(&m->function_type_map);
-	map_init(&m->equal_procs);
-	map_init(&m->hasher_procs);
-	map_init(&m->map_get_procs);
-	map_init(&m->map_set_procs);
+	string_map_init(&m->gen_procs);
 	if (USE_SEPARATE_MODULES) {
 		array_init(&m->procedures_to_generate, a, 0, 1<<10);
 		map_init(&m->procedure_values,               1<<11);
@@ -218,7 +234,7 @@ gb_internal void lb_loop_end(lbProcedure *p, lbLoopData const &data) {
 
 gb_internal void lb_make_global_private_const(LLVMValueRef global_data) {
 	LLVMSetLinkage(global_data, LLVMLinkerPrivateLinkage);
-	LLVMSetUnnamedAddress(global_data, LLVMGlobalUnnamedAddr);
+	// LLVMSetUnnamedAddress(global_data, LLVMGlobalUnnamedAddr);
 	LLVMSetGlobalConstant(global_data, true);
 }
 gb_internal void lb_make_global_private_const(lbAddr const &addr) {
@@ -1010,7 +1026,7 @@ gb_internal void lb_emit_store(lbProcedure *p, lbValue ptr, lbValue value) {
 			                 LLVMConstInt(LLVMInt64TypeInContext(p->module->ctx), lb_sizeof(LLVMTypeOf(value.value)), false));
 			return;
 		} else if (LLVMIsConstant(value.value)) {
-			lbAddr addr = lb_add_global_generated(p->module, value.type, value, nullptr);
+			lbAddr addr = lb_add_global_generated_from_procedure(p, value.type, value);
 			lb_make_global_private_const(addr);
 
 			LLVMValueRef dst_ptr = ptr.value;
@@ -1443,148 +1459,30 @@ gb_internal void lb_clone_struct_type(LLVMTypeRef dst, LLVMTypeRef src) {
 	LLVMStructSetBody(dst, fields, field_count, LLVMIsPackedStruct(src));
 }
 
-gb_internal String lb_mangle_name(Entity *e) {
-	String name = e->token.string;
-
-	AstPackage *pkg = e->pkg;
-	GB_ASSERT_MSG(pkg != nullptr, "Missing package for '%.*s'", LIT(name));
-	String pkgn = pkg->name;
-	GB_ASSERT(!rune_is_digit(pkgn[0]));
-	if (pkgn == "llvm") {
-		pkgn = str_lit("llvm$");
-	}
-
-	isize max_len = pkgn.len + 1 + name.len + 1;
-	bool require_suffix_id = is_type_polymorphic(e->type, true);
-
-	if ((e->scope->flags & (ScopeFlag_File | ScopeFlag_Pkg)) == 0) {
-		require_suffix_id = true;
-	} else if (is_blank_ident(e->token)) {
-		require_suffix_id = true;
-	}if (e->flags & EntityFlag_NotExported) {
-		require_suffix_id = true;
-	}
-
-	if (require_suffix_id) {
-		max_len += 21;
-	}
-
-	char *new_name = gb_alloc_array(permanent_allocator(), char, max_len);
-	isize new_name_len = gb_snprintf(
-		new_name, max_len,
-		"%.*s" ABI_PKG_NAME_SEPARATOR "%.*s", LIT(pkgn), LIT(name)
-	);
-	if (require_suffix_id) {
-		char *str = new_name + new_name_len-1;
-		isize len = max_len-new_name_len;
-		isize extra = gb_snprintf(str, len, "-%llu", cast(unsigned long long)e->id);
-		new_name_len += extra-1;
-	}
-
-	String mangled_name = make_string((u8 const *)new_name, new_name_len-1);
-	return mangled_name;
-}
-
-gb_internal String lb_set_nested_type_name_ir_mangled_name(Entity *e, lbProcedure *p, lbModule *module) {
-	// NOTE(bill, 2020-03-08): A polymorphic procedure may take a nested type declaration
-	// and as a result, the declaration does not have time to determine what it should be
-
-	GB_ASSERT(e != nullptr && e->kind == Entity_TypeName);
-	if (e->TypeName.ir_mangled_name.len != 0)  {
-		return e->TypeName.ir_mangled_name;
-	}
-	GB_ASSERT((e->scope->flags & ScopeFlag_File) == 0);
-
-	if (p == nullptr) {
-		Entity *proc = nullptr;
-		if (e->parent_proc_decl != nullptr) {
-			proc = e->parent_proc_decl->entity;
-		} else {
-			Scope *scope = e->scope;
-			while (scope != nullptr && (scope->flags & ScopeFlag_Proc) == 0) {
-				scope = scope->parent;
-			}
-			GB_ASSERT(scope != nullptr);
-			GB_ASSERT(scope->flags & ScopeFlag_Proc);
-			proc = scope->procedure_entity;
-		}
-		if (proc != nullptr) {
-			GB_ASSERT(proc->kind == Entity_Procedure);
-			if (proc->code_gen_procedure != nullptr) {
-				p = proc->code_gen_procedure;
-			}
-		}
-	}
-
-	// NOTE(bill): Generate a new name
-	// parent_proc.name-guid
-	String ts_name = e->token.string;
-
-	if (p != nullptr) {
-		isize name_len = p->name.len + 1 + ts_name.len + 1 + 10 + 1;
-		char *name_text = gb_alloc_array(permanent_allocator(), char, name_len);
-		u32 guid = 1+p->module->nested_type_name_guid.fetch_add(1);
-		name_len = gb_snprintf(name_text, name_len, "%.*s" ABI_PKG_NAME_SEPARATOR "%.*s-%u", LIT(p->name), LIT(ts_name), guid);
-
-		String name = make_string(cast(u8 *)name_text, name_len-1);
-		e->TypeName.ir_mangled_name = name;
-		return name;
-	} else {
-		// NOTE(bill): a nested type be required before its parameter procedure exists. Just give it a temp name for now
-		isize name_len = 9 + 1 + ts_name.len + 1 + 10 + 1;
-		char *name_text = gb_alloc_array(permanent_allocator(), char, name_len);
-		static std::atomic<u32> guid;
-		name_len = gb_snprintf(name_text, name_len, "_internal" ABI_PKG_NAME_SEPARATOR "%.*s-%u", LIT(ts_name), 1+guid.fetch_add(1));
-
-		String name = make_string(cast(u8 *)name_text, name_len-1);
-		e->TypeName.ir_mangled_name = name;
-		return name;
-	}
-}
-
-gb_internal String lb_get_entity_name(lbModule *m, Entity *e, String default_name) {
+gb_internal String lb_get_entity_name(lbModule *m, Entity *e) {
 	GB_ASSERT(m != nullptr);
-	if (e != nullptr && e->kind == Entity_TypeName && e->TypeName.ir_mangled_name.len != 0) {
-		return e->TypeName.ir_mangled_name;
-	}
 	GB_ASSERT(e != nullptr);
+	if (e->kind == Entity_TypeName && e->TypeName.ir_mangled_name.len != 0) {
+		return e->TypeName.ir_mangled_name;
+	} else if (e->kind == Entity_Procedure && e->Procedure.link_name.len != 0) {
+		return e->Procedure.link_name;
+	}
 
 	if (e->pkg == nullptr) {
 		return e->token.string;
 	}
 
-	if (e->kind == Entity_TypeName && (e->scope->flags & ScopeFlag_File) == 0) {
-		return lb_set_nested_type_name_ir_mangled_name(e, nullptr, m);
-	}
+	gbString w = string_canonical_entity_name(heap_allocator(), e);
+	defer (gb_string_free(w));
 
-	String name = {};
-
-	bool no_name_mangle = false;
-
-	if (e->kind == Entity_Variable) {
-		bool is_foreign = e->Variable.is_foreign;
-		bool is_export  = e->Variable.is_export;
-		no_name_mangle = e->Variable.link_name.len > 0 || is_foreign || is_export;
-		if (e->Variable.link_name.len > 0) {
-			return e->Variable.link_name;
-		}
-	} else if (e->kind == Entity_Procedure && e->Procedure.link_name.len > 0) {
-		return e->Procedure.link_name;
-	} else if (e->kind == Entity_Procedure && e->Procedure.is_export) {
-		no_name_mangle = true;
-	}
-
-	if (!no_name_mangle) {
-		name = lb_mangle_name(e);
-	}
-	if (name.len == 0) {
-		name = e->token.string;
-	}
+	String name = copy_string(permanent_allocator(), make_string(cast(u8 const *)w, gb_string_length(w)));
 
 	if (e->kind == Entity_TypeName) {
 		e->TypeName.ir_mangled_name = name;
 	} else if (e->kind == Entity_Procedure) {
 		e->Procedure.link_name = name;
+	} else if (e->kind == Entity_Variable) {
+		e->Variable.link_name = name;
 	}
 
 	return name;
@@ -1902,15 +1800,24 @@ gb_internal LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 					return type;
 				}
 				type = LLVMStructCreateNamed(ctx, name);
-				LLVMTypeRef fields[2] = {
-					lb_type(m, t_rawptr),
-					lb_type(m, t_typeid),
-				};
-				LLVMStructSetBody(type, fields, 2, false);
+				if (build_context.ptr_size == 4) {
+					LLVMTypeRef fields[3] = {
+						lb_type(m, t_rawptr),
+						lb_type_padding_filler(m, build_context.ptr_size, build_context.ptr_size), // padding
+						lb_type(m, t_typeid),
+					};
+					LLVMStructSetBody(type, fields, 3, false);
+				} else {
+					LLVMTypeRef fields[2] = {
+						lb_type(m, t_rawptr),
+						lb_type(m, t_typeid),
+					};
+					LLVMStructSetBody(type, fields, 2, false);
+				}
 				return type;
 			}
 
-		case Basic_typeid: return LLVMIntTypeInContext(m->ctx, 8*cast(unsigned)build_context.ptr_size);
+		case Basic_typeid: return LLVMIntTypeInContext(m->ctx, 64);
 
 		// Endian Specific Types
 		case Basic_i16le:  return LLVMInt16TypeInContext(ctx);
@@ -2088,26 +1995,26 @@ gb_internal LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 	case Type_Struct:
 		{
 			type_set_offsets(type);
-			
+
 			i64 full_type_size = type_size_of(type);
 			i64 full_type_align = type_align_of(type);
 			GB_ASSERT(full_type_size % full_type_align == 0);
-			
+
 			if (type->Struct.is_raw_union) {
-				
+
 				lbStructFieldRemapping field_remapping = {};
 				slice_init(&field_remapping, permanent_allocator(), 1);
-				
+
 				LLVMTypeRef fields[1] = {};
 				fields[0] = lb_type_padding_filler(m, full_type_size, full_type_align);
 				field_remapping[0] = 0;
-				
+
 				LLVMTypeRef struct_type = LLVMStructTypeInContext(ctx, fields, gb_count_of(fields), false);
 				map_set(&m->struct_field_remapping, cast(void *)struct_type, field_remapping);
 				map_set(&m->struct_field_remapping, cast(void *)type, field_remapping);
 				return struct_type;
 			}
-			
+
 			lbStructFieldRemapping field_remapping = {};
 			slice_init(&field_remapping, permanent_allocator(), type->Struct.fields.count);
 
@@ -2120,7 +2027,7 @@ gb_internal LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 				LLVMTypeRef padding_type = lb_type_padding_filler(m, 0, type_align_of(type));
 				array_add(&fields, padding_type);
 			}
-			
+
 			i64 prev_offset = 0;
 			bool requires_packing = type->Struct.is_packed;
 			for (i32 field_index : struct_fields_index_by_increasing_offset(temporary_allocator(), type)) {
@@ -2151,7 +2058,7 @@ gb_internal LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 
 				prev_offset = offset + type_size_of(field->type);
 			}
-			
+
 			i64 end_padding = full_type_size-prev_offset;
 			if (end_padding > 0) {
 				array_add(&fields, lb_type_padding_filler(m, end_padding, 1));
@@ -2160,14 +2067,14 @@ gb_internal LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 			for_array(i, fields) {
 				GB_ASSERT(fields[i] != nullptr);
 			}
-			
+
 			LLVMTypeRef struct_type = LLVMStructTypeInContext(ctx, fields.data, cast(unsigned)fields.count, requires_packing);
 			map_set(&m->struct_field_remapping, cast(void *)struct_type, field_remapping);
-			map_set(&m->struct_field_remapping, cast(void *)type, field_remapping);			
+			map_set(&m->struct_field_remapping, cast(void *)type, field_remapping);
 			#if 0
-			GB_ASSERT_MSG(lb_sizeof(struct_type) == full_type_size, 
-			              "(%lld) %s vs (%lld) %s", 
-			              cast(long long)lb_sizeof(struct_type), LLVMPrintTypeToString(struct_type), 
+			GB_ASSERT_MSG(lb_sizeof(struct_type) == full_type_size,
+			              "(%lld) %s vs (%lld) %s",
+			              cast(long long)lb_sizeof(struct_type), LLVMPrintTypeToString(struct_type),
 			              cast(long long)full_type_size, type_to_string(type));
 			#endif
 			return struct_type;
@@ -2196,8 +2103,22 @@ gb_internal LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 				LLVMTypeRef variant = lb_type(m, type->Union.variants[0]);
 				array_add(&fields, variant);
 			} else {
-				LLVMTypeRef block_type = lb_type_padding_filler(m, block_size, align);
-				LLVMTypeRef tag_type   = lb_type(m, union_tag_type(type));
+				LLVMTypeRef block_type = nullptr;
+
+				bool all_pointers = align == build_context.ptr_size;
+				for (isize i = 0; all_pointers && i < type->Union.variants.count; i++) {
+					Type *t = type->Union.variants[i];
+					if (!is_type_internally_pointer_like(t)) {
+						all_pointers = false;
+					}
+				}
+				if (all_pointers) {
+					block_type = lb_type(m, t_rawptr);
+				} else {
+					block_type = lb_type_padding_filler(m, block_size, align);
+				}
+
+				LLVMTypeRef tag_type = lb_type(m, union_tag_type(type));
 				array_add(&fields, block_type);
 				array_add(&fields, tag_type);
 				i64 used_size = lb_sizeof(block_type) + lb_sizeof(tag_type);
@@ -2633,12 +2554,10 @@ gb_internal LLVMValueRef lb_find_or_add_entity_string_ptr(lbModule *m, String co
 			false);
 
 
-		isize max_len = 7+8+1;
-		char *name = gb_alloc_array(permanent_allocator(), char, max_len);
-
-		u32 id = m->gen->global_array_index.fetch_add(1);
-		isize len = gb_snprintf(name, max_len, "csbs$%x", id);
-		len -= 1;
+		u32 id = m->global_array_index.fetch_add(1);
+		gbString name = gb_string_make(temporary_allocator(), "csbs$");
+		name = gb_string_appendc(name, m->module_name);
+		name = gb_string_append_fmt(name, "$%x", id);
 
 		LLVMTypeRef type = LLVMTypeOf(data);
 		LLVMValueRef global_data = LLVMAddGlobal(m->mod, type, name);
@@ -2676,14 +2595,11 @@ gb_internal lbValue lb_find_or_add_entity_string_byte_slice_with_type(lbModule *
 		false);
 
 
-	char *name = nullptr;
-	{
-		isize max_len = 7+8+1;
-		name = gb_alloc_array(permanent_allocator(), char, max_len);
-		u32 id = m->gen->global_array_index.fetch_add(1);
-		isize len = gb_snprintf(name, max_len, "csbs$%x", id);
-		len -= 1;
-	}
+	u32 id = m->global_array_index.fetch_add(1);
+	gbString name = gb_string_make(temporary_allocator(), "csba$");
+	name = gb_string_appendc(name, m->module_name);
+	name = gb_string_append_fmt(name, "$%x", id);
+
 	LLVMTypeRef type = LLVMTypeOf(data);
 	LLVMValueRef global_data = LLVMAddGlobal(m->mod, type, name);
 	LLVMSetInitializer(global_data, data);
@@ -2869,6 +2785,8 @@ gb_internal lbValue lb_generate_anonymous_proc_lit(lbModule *m, String const &pr
 	pl->decl->code_gen_module = m;
 	e->decl_info = pl->decl;
 	pl->decl->entity = e;
+	e->parent_proc_decl = pl->decl->parent;
+	e->Procedure.is_anonymous = true;
 	e->flags |= EntityFlag_ProcBodyChecked;
 
 	lbProcedure *p = lb_create_procedure(m, e);
@@ -2889,17 +2807,14 @@ gb_internal lbValue lb_generate_anonymous_proc_lit(lbModule *m, String const &pr
 }
 
 
-gb_internal lbAddr lb_add_global_generated(lbModule *m, Type *type, lbValue value, Entity **entity_) {
+gb_internal lbAddr lb_add_global_generated_with_name(lbModule *m, Type *type, lbValue value, String name, Entity **entity_) {
+	GB_ASSERT(name.len != 0);
 	GB_ASSERT(type != nullptr);
 	type = default_type(type);
 
-	isize max_len = 7+8+1;
-	u8 *str = cast(u8 *)gb_alloc_array(permanent_allocator(), u8, max_len);
-
-	u32 id = m->gen->global_generated_index.fetch_add(1);
-
-	isize len = gb_snprintf(cast(char *)str, max_len, "ggv$%x", id);
-	String name = make_string(str, len-1);
+	u8 *str = cast(u8 *)gb_alloc_array(temporary_allocator(), u8, name.len);
+	memcpy(str, name.text, name.len);
+	str[name.len] = 0;
 
 	Scope *scope = nullptr;
 	Entity *e = alloc_entity_variable(scope, make_token_ident(name), type);
@@ -2920,6 +2835,25 @@ gb_internal lbAddr lb_add_global_generated(lbModule *m, Type *type, lbValue valu
 
 	return lb_addr(g);
 }
+
+
+gb_internal lbAddr lb_add_global_generated_from_procedure(lbProcedure *p, Type *type, lbValue value) {
+	GB_ASSERT(type != nullptr);
+	type = default_type(type);
+
+	u32 index = ++p->global_generated_index;
+
+	gbString s = gb_string_make(temporary_allocator(), "ggv$");
+	// s = gb_string_appendc(s, p->module->module_name);
+	// s = gb_string_appendc(s, "$");
+	s = gb_string_append_length(s, p->name.text, p->name.len);
+	s = gb_string_append_fmt(s, "$%u", index);
+
+	String name = make_string(cast(u8 const *)s, gb_string_length(s));
+	return lb_add_global_generated_with_name(p->module, type, value, name);
+}
+
+
 
 gb_internal lbValue lb_find_runtime_value(lbModule *m, String const &name) {
 	AstPackage *p = m->info->runtime_package;
@@ -3028,7 +2962,7 @@ gb_internal lbValue lb_generate_global_array(lbModule *m, Type *elem_type, i64 c
 	g.type = alloc_type_pointer(t);
 	LLVMSetInitializer(g.value, LLVMConstNull(lb_type(m, t)));
 	LLVMSetLinkage(g.value, LLVMPrivateLinkage);
-	LLVMSetUnnamedAddress(g.value, LLVMGlobalUnnamedAddr);
+	// LLVMSetUnnamedAddress(g.value, LLVMGlobalUnnamedAddr);
 	string_map_set(&m->members, s, g);
 	return g;
 }

@@ -345,7 +345,7 @@ gb_internal void check_scope_decls(CheckerContext *c, Slice<Ast *> const &nodes,
 	check_collect_entities(c, nodes);
 
 	for (auto const &entry : s->elements) {
-		Entity *e = entry.value;
+		Entity *e = entry.value;\
 		switch (e->kind) {
 		case Entity_Constant:
 		case Entity_TypeName:
@@ -2599,9 +2599,8 @@ gb_internal ExactValue exact_bit_set_all_set_mask(Type *type) {
 					continue;
 				}
 
-				BigInt shift_amount = f->Constant.value.value_integer;
-				big_int_sub_eq(&shift_amount, &b_lower_base);
-
+				BigInt shift_amount = {};
+				big_int_sub(&shift_amount, &f->Constant.value.value_integer, &b_lower_base);
 
 				BigInt value = {};
 				big_int_shl(&value, &one, &shift_amount);
@@ -5508,6 +5507,11 @@ gb_internal Entity *check_selector(CheckerContext *c, Operand *operand, Ast *nod
 			case Addressing_SoaVariable:
 			case Addressing_SwizzleVariable:
 				operand->mode = Addressing_SwizzleVariable;
+				break;
+			case Addressing_Value:
+				if (is_type_pointer(original_type)) {
+					operand->mode = Addressing_SwizzleVariable;
+				}
 				break;
 			}
 

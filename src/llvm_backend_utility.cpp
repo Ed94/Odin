@@ -971,6 +971,13 @@ gb_internal i32 lb_convert_struct_index(lbModule *m, Type *t, i32 index) {
 	if (t->kind == Type_Struct) {
 		auto field_remapping = lb_get_struct_remapping(m, t);
 		return field_remapping[index];
+	} else if (is_type_any(t) && build_context.ptr_size == 4) {
+		GB_ASSERT(t->kind == Type_Basic);
+		GB_ASSERT(t->Basic.kind == Basic_any);
+		switch (index) {
+		case 0: return 0; // data
+		case 1: return 2; // id
+		}
 	} else if (build_context.ptr_size != build_context.int_size) {
 		switch (t->kind) {
 		case Type_Basic:
@@ -2105,7 +2112,13 @@ gb_internal lbAddr lb_handle_objc_find_or_register_selector(lbProcedure *p, Stri
 	}
 
 	if (!entity) {
-		lbAddr default_addr = lb_add_global_generated(default_module, t_objc_SEL, {}, &entity);
+		gbString global_name = gb_string_make(temporary_allocator(), "__$objc_SEL$");
+		global_name = gb_string_append_length(global_name, name.text, name.len);
+
+		lbAddr default_addr = lb_add_global_generated_with_name(
+			default_module, t_objc_SEL, {},
+			make_string(cast(u8 const *)global_name, gb_string_length(global_name)),
+			&entity);
 		string_map_set(&default_module->objc_selectors, name, lbObjcRef{entity, default_addr});
 	}
 
@@ -2162,7 +2175,12 @@ gb_internal lbAddr lb_handle_objc_find_or_register_class(lbProcedure *p, String 
 	}
 
 	if (!entity) {
-		lbAddr default_addr = lb_add_global_generated(default_module, t_objc_Class, {}, &entity);
+		gbString global_name = gb_string_make(temporary_allocator(), "__$objc_Class$");
+		global_name = gb_string_append_length(global_name, name.text, name.len);
+
+		lbAddr default_addr = lb_add_global_generated_with_name(default_module, t_objc_Class, {},
+			make_string(cast(u8 const *)global_name, gb_string_length(global_name)),
+			&entity);
 		string_map_set(&default_module->objc_classes, name, lbObjcRef{entity, default_addr});
 	}
 

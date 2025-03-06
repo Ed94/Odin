@@ -160,14 +160,16 @@ struct lbModule {
 	AstFile *file;   // possibly associated
 	char const *module_name;
 
-	PtrMap<Type *, LLVMTypeRef> types;                             // mutex: types_mutex
+	PtrMap<u64/*type hash*/, LLVMTypeRef>  types;                  // mutex: types_mutex
 	PtrMap<void *, lbStructFieldRemapping> struct_field_remapping; // Key: LLVMTypeRef or Type *, mutex: types_mutex
-	PtrMap<Type *, LLVMTypeRef> func_raw_types;                    // mutex: func_raw_types_mutex
-	RecursiveMutex              types_mutex;
-	RecursiveMutex              func_raw_types_mutex;
+	PtrMap<u64/*type hash*/, LLVMTypeRef>  func_raw_types;         // mutex: func_raw_types_mutex
+	RecursiveMutex types_mutex;
+	RecursiveMutex func_raw_types_mutex;
 	i32 internal_type_level;
 
 	RwMutex values_mutex;
+
+	std::atomic<u32> global_array_index;
 
 	PtrMap<Entity *, lbValue> values;           
 	PtrMap<Entity *, lbAddr>  soa_values;       
@@ -178,14 +180,9 @@ struct lbModule {
 
 	StringMap<LLVMValueRef> const_strings;
 
-	PtrMap<Type *, struct lbFunctionType *> function_type_map; 
+	PtrMap<u64/*type hash*/, struct lbFunctionType *> function_type_map;
 
-	PtrMap<Type *, lbProcedure *> equal_procs;
-	PtrMap<Type *, lbProcedure *> hasher_procs;
-	PtrMap<Type *, lbProcedure *> map_get_procs;
-	PtrMap<Type *, lbProcedure *> map_set_procs;
-
-	std::atomic<u32> nested_type_name_guid;
+	StringMap<lbProcedure *> gen_procs;   // key is the canonicalized name
 
 	Array<lbProcedure *> procedures_to_generate;
 	Array<Entity *> global_procedures_to_create;
@@ -204,8 +201,8 @@ struct lbModule {
 	StringMap<lbObjcRef> objc_classes;
 	StringMap<lbObjcRef> objc_selectors;
 
-	PtrMap<Type *, lbAddr> map_cell_info_map; // address of runtime.Map_Info
-	PtrMap<Type *, lbAddr> map_info_map;      // address of runtime.Map_Cell_Info
+	PtrMap<u64/*type hash*/, lbAddr> map_cell_info_map; // address of runtime.Map_Info
+	PtrMap<u64/*type hash*/, lbAddr> map_info_map;      // address of runtime.Map_Cell_Info
 
 	PtrMap<Ast *, lbAddr> exact_value_compound_literal_addr_map; // Key: Ast_CompoundLit
 
@@ -230,9 +227,6 @@ struct lbGenerator : LinkerData {
 
 	RecursiveMutex anonymous_proc_lits_mutex;
 	PtrMap<Ast *, lbProcedure *> anonymous_proc_lits; 
-
-	std::atomic<u32> global_array_index;
-	std::atomic<u32> global_generated_index;
 
 	isize used_module_count;
 
@@ -364,6 +358,8 @@ struct lbProcedure {
 	bool             in_multi_assignment;
 	Array<LLVMValueRef> raw_input_parameters;
 
+	u32 global_generated_index;
+
 	bool             uses_branch_location;
 	TokenPos         branch_location_pos;
 	TokenPos         curr_token_pos;
@@ -399,7 +395,7 @@ struct lbProcedure {
 gb_internal bool lb_init_generator(lbGenerator *gen, Checker *c);
 
 gb_internal String lb_mangle_name(Entity *e);
-gb_internal String lb_get_entity_name(lbModule *m, Entity *e, String name = {});
+gb_internal String lb_get_entity_name(lbModule *m, Entity *e);
 
 gb_internal LLVMAttributeRef lb_create_enum_attribute(LLVMContextRef ctx, char const *name, u64 value=0);
 gb_internal LLVMAttributeRef lb_create_enum_attribute_with_type(LLVMContextRef ctx, char const *name, LLVMTypeRef type);
@@ -473,7 +469,8 @@ gb_internal lbContextData *lb_push_context_onto_stack(lbProcedure *p, lbAddr ctx
 gb_internal lbContextData *lb_push_context_onto_stack_from_implicit_parameter(lbProcedure *p);
 
 
-gb_internal lbAddr lb_add_global_generated(lbModule *m, Type *type, lbValue value={}, Entity **entity_=nullptr);
+gb_internal lbAddr lb_add_global_generated_from_procedure(lbProcedure *p, Type *type, lbValue value={});
+gb_internal lbAddr lb_add_global_generated_with_name(lbModule *m, Type *type, lbValue value, String name, Entity **entity_=nullptr);
 gb_internal lbAddr lb_add_local(lbProcedure *p, Type *type, Entity *e=nullptr, bool zero_init=true, bool force_no_init=false);
 
 gb_internal void lb_add_foreign_library_path(lbModule *m, Entity *e);
@@ -608,6 +605,9 @@ gb_internal LLVMTypeRef llvm_array_type(LLVMTypeRef ElementType, uint64_t Elemen
 	return LLVMArrayType(ElementType, cast(unsigned)ElementCount);
 #endif
 }
+
+
+gb_internal String lb_internal_gen_name_from_type(char const *prefix, Type *type);
 
 
 gb_internal void lb_set_metadata_custom_u64(lbModule *m, LLVMValueRef v_ref, String name, u64 value);

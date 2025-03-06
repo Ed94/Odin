@@ -1554,7 +1554,7 @@ gb_internal lbValue lb_build_binary_expr(lbProcedure *p, Ast *expr) {
 			lbValue cmp = lb_emit_comp_against_nil(p, be->op.kind, right);
 			Type *type = default_type(tv.type);
 			return lb_emit_conv(p, cmp, type);
-		} else if (lb_is_empty_string_constant(be->right)) {
+		} else if (lb_is_empty_string_constant(be->right) && !is_type_union(be->left->tav.type)) {
 			// `x == ""` or `x != ""`
 			lbValue s = lb_build_expr(p, be->left);
 			s = lb_emit_conv(p, s, t_string);
@@ -1562,7 +1562,7 @@ gb_internal lbValue lb_build_binary_expr(lbProcedure *p, Ast *expr) {
 			lbValue cmp = lb_emit_comp(p, be->op.kind, len, lb_const_int(p->module, t_int, 0));
 			Type *type = default_type(tv.type);
 			return lb_emit_conv(p, cmp, type);
-		} else if (lb_is_empty_string_constant(be->left)) {
+		} else if (lb_is_empty_string_constant(be->left) && !is_type_union(be->right->tav.type)) {
 			// `"" == x` or `"" != x`
 			lbValue s = lb_build_expr(p, be->right);
 			s = lb_emit_conv(p, s, t_string);
@@ -2312,9 +2312,9 @@ gb_internal lbValue lb_emit_conv(lbProcedure *p, lbValue value, Type *t) {
 				lbValue array_const_value = {};
 				array_const_value.type = t;
 				array_const_value.value = LLVMConstArray(lb_type(m, elem), values, cast(unsigned)index_count);
-				v = lb_add_global_generated(m, t, array_const_value);
+				v = lb_add_global_generated_from_procedure(p, t, array_const_value);
 			} else {
-				v = lb_add_global_generated(m, t);
+				v = lb_add_global_generated_from_procedure(p, t);
 			}
 
 			lb_make_global_private_const(v);
@@ -3004,7 +3004,16 @@ gb_internal lbValue lb_emit_comp(lbProcedure *p, TokenKind op_kind, lbValue left
 
 		LLVMTypeRef mask_int_type = LLVMIntTypeInContext(p->module->ctx, cast(unsigned)(8*type_size_of(a)));
 		LLVMValueRef mask_int = LLVMBuildBitCast(p->builder, mask, mask_int_type, "");
-		res.value = LLVMBuildICmp(p->builder, LLVMIntNE, mask_int, LLVMConstNull(LLVMTypeOf(mask_int)), "");
+
+		switch (op_kind) {
+		case Token_CmpEq:
+			res.value = LLVMBuildICmp(p->builder, LLVMIntEQ, mask_int, LLVMConstInt(mask_int_type, U64_MAX, true), "");
+			break;
+		case Token_NotEq:
+			res.value = LLVMBuildICmp(p->builder, LLVMIntNE, mask_int, LLVMConstNull(mask_int_type), "");
+			break;
+		}
+
 		return res;
 
 	} else {
@@ -3255,7 +3264,7 @@ gb_internal lbValue lb_build_unary_and(lbProcedure *p, Ast *expr) {
 		Type *type = v.type;
 		lbAddr addr = {};
 		if (p->is_startup) {
-			addr = lb_add_global_generated(p->module, type, v);
+			addr = lb_add_global_generated_from_procedure(p, type, v);
 		} else {
 			addr = lb_add_local_generated(p, type, false);
 		}
@@ -3842,7 +3851,7 @@ gb_internal lbAddr lb_build_addr_from_entity(lbProcedure *p, Entity *e, Ast *exp
 		Type *t = default_type(type_of_expr(expr));
 		lbValue v = lb_const_value(p->module, t, e->Constant.value);
 		if (LLVMIsConstant(v.value)) {
-			lbAddr g = lb_add_global_generated(p->module, t, v);
+			lbAddr g = lb_add_global_generated_from_procedure(p, t, v);
 			return g;
 		}
 		GB_ASSERT(LLVMIsALoadInst(v.value));
