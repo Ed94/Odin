@@ -143,11 +143,6 @@ struct lbPadType {
 	LLVMTypeRef type;
 };
 
-struct lbObjcRef {
-	Entity * entity;
-	lbAddr local_module_addr;
-};
-
 struct lbModule {
 	LLVMModuleRef mod;
 	LLVMContextRef ctx;
@@ -198,8 +193,9 @@ struct lbModule {
 	RecursiveMutex debug_values_mutex;
 	PtrMap<void *, LLVMMetadataRef> debug_values; 
 
-	StringMap<lbObjcRef> objc_classes;
-	StringMap<lbObjcRef> objc_selectors;
+
+	StringMap<lbAddr> objc_classes;
+	StringMap<lbAddr> objc_selectors;
 
 	PtrMap<u64/*type hash*/, lbAddr> map_cell_info_map; // address of runtime.Map_Info
 	PtrMap<u64/*type hash*/, lbAddr> map_info_map;      // address of runtime.Map_Cell_Info
@@ -216,6 +212,13 @@ struct lbEntityCorrection {
 	lbModule *  other_module;
 	Entity *    e;
 	char const *cname;
+};
+
+struct lbObjCGlobal {
+	lbModule *module;
+	gbString  global_name;
+	String    name;
+	Type *    type;
 };
 
 struct lbGenerator : LinkerData {
@@ -235,6 +238,8 @@ struct lbGenerator : LinkerData {
 	lbProcedure *objc_names;
 
 	MPSCQueue<lbEntityCorrection> entities_to_correct_linkage;
+	MPSCQueue<lbObjCGlobal> objc_selectors;
+	MPSCQueue<lbObjCGlobal> objc_classes;
 };
 
 
