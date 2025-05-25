@@ -293,6 +293,7 @@ build.sh
 
 # RAD debugger project file
 *.raddbg
-
+*.rdi
+tests/issues/build/*
 misc/featuregen/featuregen
 codegen/build/gen_src.map

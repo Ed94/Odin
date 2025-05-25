@@ -58,7 +58,6 @@ import trace            "core:debug/trace"
 import dynlib           "core:dynlib"
 import net              "core:net"
 
-import ansi             "core:encoding/ansi"
 import base32           "core:encoding/base32"
 import base64           "core:encoding/base64"
 import cbor             "core:encoding/cbor"
@@ -118,6 +117,7 @@ import relative         "core:relative"
 
 import reflect          "core:reflect"
 import runtime          "base:runtime"
+import sanitizer        "base:sanitizer"
 import simd             "core:simd"
 import x86              "core:simd/x86"
 import slice            "core:slice"
@@ -127,6 +127,9 @@ import strconv          "core:strconv"
 import strings          "core:strings"
 import sync             "core:sync"
 import testing          "core:testing"
+
+import terminal         "core:terminal"
+import ansi             "core:terminal/ansi"
 
 import edit             "core:text/edit"
 import i18n             "core:text/i18n"
@@ -200,7 +203,6 @@ _ :: pe
 _ :: trace
 _ :: dynlib
 _ :: net
-_ :: ansi
 _ :: base32
 _ :: base64
 _ :: csv
@@ -256,6 +258,8 @@ _ :: strconv
 _ :: strings
 _ :: sync
 _ :: testing
+_ :: terminal
+_ :: ansi
 _ :: scanner
 _ :: i18n
 _ :: match
@@ -275,3 +279,4 @@ _ :: uuid_legacy
 _ :: utf8
 _ :: utf8string
 _ :: utf16
+_ :: sanitizer

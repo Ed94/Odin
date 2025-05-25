@@ -459,6 +459,7 @@ struct BuildContext {
 	bool   ignore_unknown_attributes;
 	bool   no_bounds_check;
 	bool   no_type_assert;
+	bool   dynamic_literals;  // Opt-in to `#+feature dynamic-literals` project-wide.
 	bool   no_output_files;
 	bool   no_crt;
 	bool   no_rpath;
@@ -551,10 +552,9 @@ struct BuildContext {
 	String ODIN_ANDROID_NDK_TOOLCHAIN_LIB_LEVEL;
 	String ODIN_ANDROID_NDK_TOOLCHAIN_SYSROOT;
 
-	String ODIN_ANDROID_JAR_SIGNER;
 	String android_keystore;
 	String android_keystore_alias;
-	String android_manifest;
+	String android_keystore_password;
 };
 
 gb_global BuildContext build_context = {0};
@@ -848,13 +848,39 @@ gb_global NamedTargetMetrics *selected_target_metrics;
 gb_global Subtarget selected_subtarget;
 
 
-gb_internal TargetOsKind get_target_os_from_string(String str) {
+gb_internal TargetOsKind get_target_os_from_string(String str, Subtarget *subtarget_ = nullptr) {
+	String os_name = str;
+	String subtarget = {};
+	auto part = string_partition(str, str_lit(":"));
+	if (part.match.len == 1) {
+		os_name = part.head;
+		subtarget = part.tail;
+	}
+
+	TargetOsKind kind = TargetOs_Invalid;
+
 	for (isize i = 0; i < TargetOs_COUNT; i++) {
-		if (str_eq_ignore_case(target_os_names[i], str)) {
-			return cast(TargetOsKind)i;
+		if (str_eq_ignore_case(target_os_names[i], os_name)) {
+			kind = cast(TargetOsKind)i;
+			break;
 		}
 	}
-	return TargetOs_Invalid;
+	if (subtarget_) *subtarget_ = Subtarget_Default;
+
+	if (subtarget.len != 0) {
+		if (str_eq_ignore_case(subtarget, "generic") || str_eq_ignore_case(subtarget, "default")) {
+			if (subtarget_) *subtarget_ = Subtarget_Default;
+		} else {
+			for (isize i = 1; i < Subtarget_COUNT; i++) {
+				if (str_eq_ignore_case(subtarget_strings[i], subtarget)) {
+					if (subtarget_) *subtarget_ = cast(Subtarget)i;
+					break;
+				}
+			}
+		}
+	}
+
+	return kind;
 }
 
 gb_internal TargetArchKind get_target_arch_from_string(String str) {
@@ -1573,22 +1599,13 @@ gb_internal void init_android_values(bool with_sdk) {
 	bc->ODIN_ANDROID_NDK_TOOLCHAIN_SYSROOT = concatenate_strings(permanent_allocator(), bc->ODIN_ANDROID_NDK_TOOLCHAIN, str_lit("sysroot/"));
 
 
-	bc->ODIN_ANDROID_JAR_SIGNER = normalize_path(permanent_allocator(), make_string_c(gb_get_env("ODIN_ANDROID_JAR_SIGNER", permanent_allocator())), NIX_SEPARATOR_STRING);
 	if (with_sdk) {
 		if (bc->ODIN_ANDROID_SDK.len == 0)  {
 			gb_printf_err("Error: ODIN_ANDROID_SDK not set, which is required for -build-mode:executable for -subtarget:android");
 			gb_exit(1);
 		}
-		if (bc->ODIN_ANDROID_JAR_SIGNER.len == 0) {
-			gb_printf_err("Error: ODIN_ANDROID_JAR_SIGNER not set, which is required for -build-mode:executable for -subtarget:android");
-			gb_exit(1);
-		}
 		if (bc->android_keystore.len == 0) {
 			gb_printf_err("Error: -android-keystore:<string> has not been set\n");
-			gb_exit(1);
-		}
-		if (bc->android_keystore_alias.len == 0) {
-			gb_printf_err("Error: -android-keystore_alias:<string> has not been set\n");
 			gb_exit(1);
 		}
 	}
@@ -1774,6 +1791,30 @@ gb_internal void init_build_context(TargetMetrics *cross_target, Subtarget subta
 		bc->ODIN_WINDOWS_SUBSYSTEM = windows_subsystem_names[Windows_Subsystem_CONSOLE];
 	}
 
+	if (subtarget == Subtarget_Android) {
+		switch (build_context.build_mode) {
+		case BuildMode_DynamicLibrary:
+		case BuildMode_Object:
+		case BuildMode_Assembly:
+		case BuildMode_LLVM_IR:
+			break;
+		default:
+		case BuildMode_Executable:
+		case BuildMode_StaticLibrary:
+			if ((build_context.command_kind & Command__does_build) != 0) {
+				gb_printf_err("Unsupported -build-mode for -subtarget:android\n");
+				gb_printf_err("\tCurrently only supporting: \n");
+				// gb_printf_err("\t\texe\n");
+				gb_printf_err("\t\tshared\n");
+				gb_printf_err("\t\tobject\n");
+				gb_printf_err("\t\tassembly\n");
+				gb_printf_err("\t\tllvm-ir\n");
+				gb_exit(1);
+			}
+			break;
+		}
+	}
+
 	if (metrics->os == TargetOs_darwin && subtarget == Subtarget_iOS) {
 		switch (metrics->arch) {
 		case TargetArch_arm64:
@@ -1849,7 +1890,7 @@ gb_internal void init_build_context(TargetMetrics *cross_target, Subtarget subta
 			bc->metrics.target_triplet = concatenate_strings(permanent_allocator(), bc->metrics.target_triplet, bc->minimum_os_version_string);
 		}
 	} else if (selected_subtarget == Subtarget_Android) {
-		init_android_values(bc->build_mode == BuildMode_Executable);
+		init_android_values(bc->build_mode == BuildMode_Executable && (bc->command_kind & Command__does_build) != 0);
 	}
 
 	if (!bc->custom_optimization_level) {
@@ -1875,12 +1916,6 @@ gb_internal void init_build_context(TargetMetrics *cross_target, Subtarget subta
 	}
 
 
-	// TODO: Static map calls are bugged on `amd64sysv` abi.
-	if (bc->metrics.os != TargetOs_windows && bc->metrics.arch == TargetArch_amd64) {
-		// ENFORCE DYNAMIC MAP CALLS
-		bc->dynamic_map_calls = true;
-	}
-
 	bc->ODIN_VALGRIND_SUPPORT = false;
 	if (build_context.metrics.os != TargetOs_windows) {
 		switch (bc->metrics.arch) {
@@ -1892,30 +1927,6 @@ gb_internal void init_build_context(TargetMetrics *cross_target, Subtarget subta
 
 	if (bc->metrics.os == TargetOs_freestanding) {
 		bc->ODIN_DEFAULT_TO_NIL_ALLOCATOR = !bc->ODIN_DEFAULT_TO_PANIC_ALLOCATOR;
-	}
-
-	if (subtarget == Subtarget_Android) {
-		switch (build_context.build_mode) {
-		case BuildMode_DynamicLibrary:
-		case BuildMode_Object:
-		case BuildMode_Assembly:
-		case BuildMode_LLVM_IR:
-			break;
-		default:
-		case BuildMode_Executable:
-		case BuildMode_StaticLibrary:
-			if ((build_context.command_kind & Command__does_build) != 0) {
-				gb_printf_err("Unsupported -build-mode for -subtarget:android\n");
-				gb_printf_err("\tCurrently only supporting: \n");
-				// gb_printf_err("\t\texe\n");
-				gb_printf_err("\t\tshared\n");
-				gb_printf_err("\t\tobject\n");
-				gb_printf_err("\t\tassembly\n");
-				gb_printf_err("\t\tllvm-ir\n");
-				gb_exit(1);
-			}
-			break;
-		}
 	}
 }
 
@@ -2198,11 +2209,34 @@ gb_internal bool init_build_paths(String init_filename) {
 			while (output_name.len > 0 && (output_name[output_name.len-1] == '/' || output_name[output_name.len-1] == '\\')) {
 				output_name.len -= 1;
 			}
+			// Only trim the extension if it's an Odin source file.
+			// This lets people build folders with extensions or files beginning with dots.
+			if (path_extension(output_name) == ".odin" && !path_is_directory(output_name)) {
+				output_name = remove_extension_from_path(output_name);
+			}
 			output_name = remove_directory_from_path(output_name);
-			output_name = remove_extension_from_path(output_name);
 			output_name = copy_string(ha, string_trim_whitespace(output_name));
-			output_path = path_from_string(ha, output_name);
-			
+			// This is `path_from_string` without the extension trimming.
+			Path res = {};
+			if (output_name.len > 0) {
+				String fullpath = path_to_full_path(ha, output_name);
+				defer (gb_free(ha, fullpath.text));
+
+				res.basename = directory_from_path(fullpath);
+				res.basename = copy_string(ha, res.basename);
+
+				if (path_is_directory(fullpath)) {
+					if (res.basename.len > 0 && res.basename.text[res.basename.len - 1] == '/') {
+						res.basename.len--;
+					}
+				} else {
+					isize name_start = (res.basename.len > 0) ? res.basename.len + 1 : res.basename.len;
+					res.name         = substring(fullpath, name_start, fullpath.len);
+					res.name         = copy_string(ha, res.name);
+				}
+			}
+			output_path = res;
+
 			// Note(Dragos): This is a fix for empty filenames
 			// Turn the trailing folder into the file name
 			if (output_path.name.len == 0) {

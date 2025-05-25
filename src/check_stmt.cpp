@@ -2108,10 +2108,12 @@ gb_internal void check_value_decl_stmt(CheckerContext *ctx, Ast *node, u32 mod_f
 		if (init_type == nullptr) {
 			init_type = t_invalid;
 		} else if (is_type_polymorphic(base_type(init_type))) {
+			/* DISABLED: This error seems too aggressive for instantiated generic types.
 			gbString str = type_to_string(init_type);
 			error(vd->type, "Invalid use of a polymorphic type '%s' in variable declaration", str);
 			gb_string_free(str);
 			init_type = t_invalid;
+			*/
 		}
 		if (init_type == t_invalid && entity_count == 1 && (mod_flags & (Stmt_BreakAllowed|Stmt_FallthroughAllowed))) {
 			Entity *e = entities[0];
@@ -2754,6 +2756,47 @@ gb_internal void check_stmt_internal(CheckerContext *ctx, Ast *node, u32 flags) 
 			ctx->in_defer = out_in_defer;
 			if (ctx->decl) {
 				ctx->decl->defer_used += 1;
+			}
+
+			// NOTE(bill): Handling errors/warnings
+
+			Ast *stmt = ds->stmt;
+			Ast *original_stmt = stmt;
+
+			bool is_singular = true;
+			while (is_singular && stmt->kind == Ast_BlockStmt) {
+				Ast *inner_stmt = nullptr;
+				for (Ast *s : stmt->BlockStmt.stmts) {
+					if (s->kind == Ast_EmptyStmt) {
+						continue;
+					}
+					if (inner_stmt != nullptr) {
+						is_singular = false;
+						break;
+					}
+					inner_stmt = s;
+				}
+
+				if (inner_stmt != nullptr) {
+					stmt = inner_stmt;
+				}
+			}
+			if (!is_singular) {
+				stmt = original_stmt;
+			}
+
+			switch (stmt->kind) {
+			case_ast_node(as, AssignStmt, stmt);
+				if (as->op.kind != Token_Eq) {
+					break;
+				}
+				for (Ast *lhs : as->lhs) {
+					Entity *e = entity_of_node(lhs);
+					if (e && e->flags & EntityFlag_Result) {
+						error(lhs, "Assignments to named return values within 'defer' will not affect the value that is returned");
+					}
+				}
+			case_end;
 			}
 		}
 	case_end;

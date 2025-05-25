@@ -1106,3 +1106,11 @@ __read_bits :: proc "contextless" (dst, src: [^]byte, offset: uintptr, size: uin
 		dst[j>>3]  |= the_bit<<(j&7)
 	}
 }
+
+when .Address in ODIN_SANITIZER_FLAGS {
+	foreign {
+		@(require)
+		__asan_unpoison_memory_region :: proc "system" (address: rawptr, size: uint) ---
+	}
+}
+

@@ -643,7 +643,7 @@ gb_internal bool find_or_generate_polymorphic_procedure(CheckerContext *old_c, E
 
 gb_internal bool check_polymorphic_procedure_assignment(CheckerContext *c, Operand *operand, Type *type, Ast *poly_def_node, PolyProcData *poly_proc_data) {
 	if (operand->expr == nullptr) return false;
-	Entity *base_entity = entity_of_node(operand->expr);
+	Entity *base_entity = entity_from_expr(operand->expr);
 	if (base_entity == nullptr) return false;
 	return find_or_generate_polymorphic_procedure(c, base_entity, type, nullptr, poly_def_node, poly_proc_data);
 }
@@ -995,14 +995,34 @@ gb_internal i64 assign_score_function(i64 distance, bool is_variadic=false) {
 
 
 gb_internal bool check_is_assignable_to_with_score(CheckerContext *c, Operand *operand, Type *type, i64 *score_, bool is_variadic=false, bool allow_array_programming=true) {
-	i64 score = 0;
-	i64 distance = check_distance_between_types(c, operand, type, allow_array_programming);
-	bool ok = distance >= 0;
-	if (ok) {
-		score = assign_score_function(distance, is_variadic);
+	if (c == nullptr) {
+		GB_ASSERT(operand->mode == Addressing_Value);
+		GB_ASSERT(is_type_typed(operand->type));
 	}
-	if (score_) *score_ = score;
-	return ok;
+	if (operand->mode == Addressing_Invalid || type == t_invalid) {
+		if (score_) *score_ = 0;
+		return false;
+	}
+
+	// Handle polymorphic procedure used as default parameter
+	if (operand->mode == Addressing_Value && is_type_proc(type) && is_type_proc(operand->type)) {
+		Entity *e = entity_from_expr(operand->expr);
+		if (e != nullptr && e->kind == Entity_Procedure && is_type_polymorphic(e->type) && !is_type_polymorphic(type)) {
+			// Special case: Allow a polymorphic procedure to be used as default value for concrete proc type
+			// during the initial check. It will be properly instantiated when actually used.
+			if (score_) *score_ = assign_score_function(1);
+			return true;
+		}
+	}
+
+	i64 score = check_distance_between_types(c, operand, type, allow_array_programming);
+	if (score >= 0) {
+		if (score_) *score_ = assign_score_function(score, is_variadic);
+		return true;
+	}
+
+	if (score_) *score_ = 0;
+	return false;
 }
 
 
@@ -1854,7 +1874,10 @@ gb_internal Entity *check_ident(CheckerContext *c, Operand *o, Ast *n, Type *nam
 			o->type = t_invalid;
 		}
 		if (o->type != nullptr && o->type->kind == Type_Named && o->type->Named.type_name->TypeName.is_type_alias) {
-			o->type = base_type(o->type);
+			Type *bt = base_type(o->type);
+			if (bt != nullptr) {
+				o->type = bt;
+			}
 		}
 
 		break;
@@ -2907,9 +2930,20 @@ gb_internal void check_comparison(CheckerContext *c, Ast *node, Operand *x, Oper
 		if (!defined) {
 			gbString xs = type_to_string(x->type, temporary_allocator());
 			gbString ys = type_to_string(y->type, temporary_allocator());
-			err_str = gb_string_make(temporary_allocator(),
-				gb_bprintf("operator '%.*s' not defined between the types '%s' and '%s'", LIT(token_strings[op]), xs, ys)
-			);
+
+			if (!is_type_comparable(x->type)) {
+				err_str = gb_string_make(temporary_allocator(),
+					gb_bprintf("Type '%s' is not simply comparable, so operator '%.*s' is not defined for it", xs, LIT(token_strings[op]))
+				);
+			} else if (!is_type_comparable(y->type)) {
+				err_str = gb_string_make(temporary_allocator(),
+					gb_bprintf("Type '%s' is not simply comparable, so operator '%.*s' is not defined for it", ys, LIT(token_strings[op]))
+				);
+			} else {
+				err_str = gb_string_make(temporary_allocator(),
+					gb_bprintf("Operator '%.*s' not defined between the types '%s' and '%s'", LIT(token_strings[op]), xs, ys)
+				);
+			}
 		} else {
 			Type *comparison_type = x->type;
 			if (x->type == err_type && is_operand_nil(*x)) {
@@ -2930,11 +2964,11 @@ gb_internal void check_comparison(CheckerContext *c, Ast *node, Operand *x, Oper
 		} else {
 			yt = type_to_string(y->type);
 		}
-		err_str = gb_string_make(temporary_allocator(), gb_bprintf("mismatched types '%s' and '%s'", xt, yt));
+		err_str = gb_string_make(temporary_allocator(), gb_bprintf("Mismatched types '%s' and '%s'", xt, yt));
 	}
 
 	if (err_str != nullptr) {
-		error(node, "Cannot compare expression, %s", err_str);
+		error(node, "Cannot compare expression. %s.", err_str);
 		x->type = t_untyped_bool;
 	} else {
 		if (x->mode == Addressing_Constant &&
@@ -5427,8 +5461,18 @@ gb_internal Entity *check_selector(CheckerContext *c, Operand *operand, Ast *nod
 		}
 	}
 
+	if (operand->type && is_type_simd_vector(type_deref(operand->type))) {
+		String field_name = selector->Ident.token.string;
+		if (field_name.len == 1) {
+			error(op_expr, "Extracting an element from a #simd array using .%.*s syntax is disallowed, prefer `simd.extract`", LIT(field_name));
+		} else {
+			error(op_expr, "Extracting elements from a #simd array using .%.*s syntax is disallowed, prefer `swizzle`", LIT(field_name));
+		}
+		return nullptr;
+	}
+
 	if (entity == nullptr && selector->kind == Ast_Ident && operand->type != nullptr &&
-	    (is_type_array(type_deref(operand->type)) || is_type_simd_vector(type_deref(operand->type)))) {
+	    (is_type_array(type_deref(operand->type)))) {
 		String field_name = selector->Ident.token.string;
 		if (1 < field_name.len && field_name.len <= 4) {
 			u8 swizzles_xyzw[4] = {'x', 'y', 'z', 'w'};
@@ -5483,7 +5527,7 @@ gb_internal Entity *check_selector(CheckerContext *c, Operand *operand, Ast *nod
 
 			Type *original_type = operand->type;
 			Type *array_type = base_type(type_deref(original_type));
-			GB_ASSERT(array_type->kind == Type_Array || array_type->kind == Type_SimdVector);
+			GB_ASSERT(array_type->kind == Type_Array);
 
 			i64 array_count = get_array_type_count(array_type);
 
@@ -5522,10 +5566,6 @@ gb_internal Entity *check_selector(CheckerContext *c, Operand *operand, Ast *nod
 					operand->mode = Addressing_SwizzleVariable;
 				}
 				break;
-			}
-
-			if (array_type->kind == Type_SimdVector) {
-				operand->mode = Addressing_Value;
 			}
 
 			Entity *swizzle_entity = alloc_entity_variable(nullptr, make_token_ident(field_name), operand->type, EntityState_Resolved);
@@ -8142,7 +8182,7 @@ gb_internal ExprKind check_call_expr(CheckerContext *c, Operand *operand, Ast *c
 			type = pt;
 		}
 		type = base_type(type);
-		if (type->kind == Type_Proc && type->Proc.optional_ok) {
+		if (type->kind == Type_Proc && type->Proc.optional_ok && type->Proc.result_count > 0) {
 			operand->mode = Addressing_OptionalOk;
 			operand->type = type->Proc.results->Tuple.variables[0]->type;
 			if (operand->expr != nullptr && operand->expr->kind == Ast_CallExpr) {
@@ -9013,7 +9053,19 @@ gb_internal ExprKind check_or_else_expr(CheckerContext *c, Operand *o, Ast *node
 
 	if (left_type != nullptr) {
 		if (!y_is_diverging) {
-			check_assignment(c, &y, left_type, name);
+			if (is_type_tuple(left_type)) {
+				if (!is_type_tuple(y.type)) {
+					error(y.expr, "Found a single value where a %td-valued expression was expected", left_type->Tuple.variables.count);
+				} else if (!are_types_identical(left_type, y.type)) {
+					gbString xt = type_to_string(left_type);
+					gbString yt = type_to_string(y.type);
+					error(y.expr, "Mismatched types, expected (%s), got (%s)", xt, yt);
+					gb_string_free(yt);
+					gb_string_free(xt);
+				}
+			} else {
+				check_assignment(c, &y, left_type, name);
+			}
 		}
 	} else {
 		check_or_else_expr_no_value_error(c, name, x, type_hint);
@@ -9389,7 +9441,7 @@ gb_internal bool is_expr_inferred_fixed_array(Ast *type_expr) {
 }
 
 gb_internal bool check_for_dynamic_literals(CheckerContext *c, Ast *node, AstCompoundLit *cl) {
-	if (cl->elems.count > 0 && (check_feature_flags(c, node) & OptInFeatureFlag_DynamicLiterals) == 0) {
+	if (cl->elems.count > 0 && (check_feature_flags(c, node) & OptInFeatureFlag_DynamicLiterals) == 0 && !build_context.dynamic_literals) {
 		ERROR_BLOCK();
 		error(node, "Compound literals of dynamic types are disabled by default");
 		error_line("\tSuggestion: If you want to enable them for this specific file, add '#+feature dynamic-literals' at the top of the file\n");
@@ -10972,7 +11024,7 @@ gb_internal ExprKind check_expr_base_internal(CheckerContext *c, Operand *o, Ast
 		return kind;
 	case_end;
 
-	case_ast_node(i, Implicit, node)
+	case_ast_node(i, Implicit, node);
 		switch (i->kind) {
 		case Token_context:
 			{

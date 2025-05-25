@@ -1449,9 +1449,12 @@ fmt_float :: proc(fi: ^Info, v: f64, bit_size: int, verb: rune) {
 		_fmt_float_as(fi, v, bit_size, verb, 'g', -1)
 	case 'f', 'F':
 		_fmt_float_as(fi, v, bit_size, verb, 'f', 3)
-	case 'e', 'E':
+	case 'e':
 		// BUG(): "%.3e" returns "3.000e+00"
 		_fmt_float_as(fi, v, bit_size, verb, 'e', 6)
+	case 'E':
+		// BUG(): "%.3E" returns "3.000E+00"
+		_fmt_float_as(fi, v, bit_size, verb, 'E', 6)
 
 	case 'h', 'H':
 		prev_fi := fi^
@@ -1802,11 +1805,8 @@ fmt_bit_set :: proc(fi: ^Info, v: any, name: string = "", verb: rune = 'v') {
 
 		e, is_enum := et.variant.(runtime.Type_Info_Enum)
 		commas := 0
-		loop: for i in 0 ..< bit_size {
-			if bits & (1<<i) == 0 {
-				continue loop
-			}
-
+		loop: for i in transmute(bit_set[0..<128])bits {
+			i := i64(i) + info.lower
 			if commas > 0 {
 				io.write_string(fi.writer, ", ", &fi.n)
 			}
@@ -1829,8 +1829,7 @@ fmt_bit_set :: proc(fi: ^Info, v: any, name: string = "", verb: rune = 'v') {
 					}
 				}
 			}
-			v := i64(i) + info.lower
-			io.write_i64(fi.writer, v, 10, &fi.n)
+			io.write_i64(fi.writer, i, 10, &fi.n)
 			commas += 1
 		}
 	}

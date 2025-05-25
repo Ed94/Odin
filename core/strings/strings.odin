@@ -787,7 +787,7 @@ Example:
 	import "core:fmt"
 	import "core:strings"
 
-	cut_example :: proc() {
+	cut_clone_example :: proc() {
 		fmt.println(strings.cut_clone("some example text", 0, 4)) // -> "some"
 		fmt.println(strings.cut_clone("some example text", 2, 2)) // -> "me"
 		fmt.println(strings.cut_clone("some example text", 5, 7)) // -> "example"
@@ -3044,7 +3044,6 @@ left_justify :: proc(str: string, length: int, pad: string, allocator := context
 	pad_len := rune_count(pad)
 
 	b: Builder
-	builder_init(&b, allocator)
 	builder_init(&b, 0, len(str) + (remains/pad_len + 1)*len(pad), allocator) or_return
 
 	w := to_writer(&b)
@@ -3079,7 +3078,6 @@ right_justify :: proc(str: string, length: int, pad: string, allocator := contex
 	pad_len := rune_count(pad)
 
 	b: Builder
-	builder_init(&b, allocator)
 	builder_init(&b, 0, len(str) + (remains/pad_len + 1)*len(pad), allocator) or_return
 
 	w := to_writer(&b)
