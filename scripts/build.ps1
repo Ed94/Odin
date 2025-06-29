@@ -25,3 +25,17 @@ $path_repo_root = Get-ScriptRepoRoot
 
 $compiler_build_script = join-path $path_repo_root 'build.bat'
 & $compiler_build_script release
+
+$odin_exe       = Get-ChildItem -Path $path_repo_root -Recurse -Filter "odin.exe" -File | Select-Object -First 1
+$odin_sectr_exe = Get-ChildItem -Path $path_repo_root -Recurse -Filter "odin_sectr.exe" -File | Select-Object -First 1
+
+if ($odin_sectr_exe) {
+	remove-item $odin_sectr_exe
+}
+
+if ($odin_exe) {
+    Rename-Item -Path $odin_exe.FullName -NewName "odin_sectr.exe" -Force
+    Write-Host "Renamed $($odin_exe.FullName) to odin_sectr.exe"
+} else {
+    Write-Error "Could not find odin.exe in repository after build."
+}
