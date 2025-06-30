@@ -4,7 +4,6 @@ This is a fork of the compiler intended for usage with [SectrPrototype](https://
 
 There were additions made for quality of life reasons:
 
-* Added #region, #endregion directives support for editors (I may remove this...)
 * I added support for 'monlithic packages' or 'uniform-across-subdirectories packages'. It allows me to organize the main package with sub-directories. (Could be flag instead but making it a file flag works well)
 * Added the ability to debug using statements on structs (fields get dumped to the stack as ptr refs)
   * They show up as `struct_name::field_name`
@@ -22,7 +21,9 @@ There were additions made for quality of life reasons:
   * Added debug breaks to the following:
     * core:cbor/unmarshal.odin:`_unmarshal_map`
     * core:json/unmarshal.odin:`unmarshal_object`
+* ~~Added #region, #endregion directives support for editors.~~ Removed in favor of using an editor section to enable folding via comment region signatures.
 
+A [fork of the ols language server](https://github.com/Ed94/ols) has also be made to support these adjustments.
 
 ---
 
