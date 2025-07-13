@@ -370,6 +370,7 @@ enum BuildFlagKind {
 	BuildFlag_NoRTTI,
 	BuildFlag_DynamicMapCalls,
 	BuildFlag_ObfuscateSourceCodeLocations,
+	BuildFlag_SourceCodeLocations,
 
 	BuildFlag_Compact,
 	BuildFlag_GlobalDefinitions,
@@ -594,9 +595,10 @@ gb_internal bool parse_build_flags(Array<String> args) {
 	add_flag(&build_flags, BuildFlag_DynamicMapCalls,         str_lit("dynamic-map-calls"),         BuildFlagParam_None,    Command__does_check);
 
 	add_flag(&build_flags, BuildFlag_ObfuscateSourceCodeLocations, str_lit("obfuscate-source-code-locations"), BuildFlagParam_None,    Command__does_build);
+	add_flag(&build_flags, BuildFlag_SourceCodeLocations, 		str_lit("source-code-locations"), 		BuildFlagParam_String,  Command__does_build);
 
 	add_flag(&build_flags, BuildFlag_Short,                   str_lit("short"),                     BuildFlagParam_None,    Command_doc);
-	add_flag(&build_flags, BuildFlag_AllPackages,             str_lit("all-packages"),              BuildFlagParam_None,    Command_doc | Command_test);
+	add_flag(&build_flags, BuildFlag_AllPackages,             str_lit("all-packages"),              BuildFlagParam_None,    Command_doc | Command_test | Command_build);
 	add_flag(&build_flags, BuildFlag_DocFormat,               str_lit("doc-format"),                BuildFlagParam_None,    Command_doc);
 
 	add_flag(&build_flags, BuildFlag_IgnoreWarnings,          str_lit("ignore-warnings"),           BuildFlagParam_None,    Command_all);
@@ -1422,7 +1424,23 @@ gb_internal bool parse_build_flags(Array<String> args) {
 							break;
 
 						case BuildFlag_ObfuscateSourceCodeLocations:
-							build_context.obfuscate_source_code_locations = true;
+							gb_printf_err("'-obfuscate-source-code-locations' is now deprecated in favor of '-source-code-locations:obfuscated'\n");
+							build_context.source_code_location_info = SourceCodeLocationInfo_Obfuscated;
+							break;
+
+						case BuildFlag_SourceCodeLocations:
+							if (str_eq_ignore_case(value.value_string, str_lit("normal"))) {
+								build_context.source_code_location_info = SourceCodeLocationInfo_Normal;
+							} else if (str_eq_ignore_case(value.value_string, str_lit("obfuscated"))) {
+								build_context.source_code_location_info = SourceCodeLocationInfo_Obfuscated;
+							} else if (str_eq_ignore_case(value.value_string, str_lit("filename"))) {
+								build_context.source_code_location_info = SourceCodeLocationInfo_Filename;
+							} else if (str_eq_ignore_case(value.value_string, str_lit("none"))) {
+								build_context.source_code_location_info = SourceCodeLocationInfo_None;
+							} else {
+								gb_printf_err("-source-code-locations:<string> options are 'normal', 'obfuscated', 'filename', and 'none'\n");
+								bad_flags = true;
+							}
 							break;
 
 						case BuildFlag_DefaultToNilAllocator:
@@ -1554,6 +1572,11 @@ gb_internal bool parse_build_flags(Array<String> args) {
 
 						case BuildFlag_Sanitize:
 							GB_ASSERT(value.kind == ExactValue_String);
+
+							if (build_context.sanitizer_flags != 0) {
+								gb_printf_err("-sanitize:<string> may only be used once\n");
+								bad_flags = true;
+							}
 
 							if (str_eq_ignore_case(value.value_string, str_lit("address"))) {
 								build_context.sanitizer_flags |= SanitizerFlag_Address;
@@ -1730,6 +1753,12 @@ gb_internal bool parse_build_flags(Array<String> args) {
 		bad_flags = true;
 	} else if (build_context.show_timings && build_context.print_linker_flags) {
 		gb_printf_err("-show-timings/-show-more-timings cannot be used with -print-linker-flags\n");
+		bad_flags = true;
+	}
+
+
+	if ((build_context.command_kind & (Command_doc | Command_test)) == 0 && build_context.test_all_packages) {
+		gb_printf_err("`-test-all-packages` can only be used with `odin build -build-mode:test`, `odin test`, or `odin doc`.\n");
 		bad_flags = true;
 	}
 
@@ -1985,39 +2014,39 @@ gb_internal void show_timings(Checker *c, Timings *t) {
 
 	if (build_context.show_debug_messages && build_context.show_more_timings) {
 		{
-			gb_printf("\n");
-			gb_printf("Total Lines     - %td\n", lines);
-			gb_printf("Total Tokens    - %td\n", tokens);
-			gb_printf("Total Files     - %td\n", files);
-			gb_printf("Total Packages  - %td\n", packages);
-			gb_printf("Total File Size - %td\n", total_file_size);
-			gb_printf("\n");
+			gb_printf_err("\n");
+			gb_printf_err("Total Lines     - %td\n", lines);
+			gb_printf_err("Total Tokens    - %td\n", tokens);
+			gb_printf_err("Total Files     - %td\n", files);
+			gb_printf_err("Total Packages  - %td\n", packages);
+			gb_printf_err("Total File Size - %td\n", total_file_size);
+			gb_printf_err("\n");
 		}
 		{
 			f64 time = total_tokenizing_time;
-			gb_printf("Tokenization Only\n");
-			gb_printf("LOC/s        - %.3f\n", cast(f64)lines/time);
-			gb_printf("us/LOC       - %.3f\n", 1.0e6*time/cast(f64)lines);
-			gb_printf("Tokens/s     - %.3f\n", cast(f64)tokens/time);
-			gb_printf("us/Token     - %.3f\n", 1.0e6*time/cast(f64)tokens);
-			gb_printf("bytes/s      - %.3f\n", cast(f64)total_file_size/time);
-			gb_printf("MiB/s        - %.3f\n", cast(f64)(total_file_size/time)/(1024*1024));
-			gb_printf("us/bytes     - %.3f\n", 1.0e6*time/cast(f64)total_file_size);
+			gb_printf_err("Tokenization Only\n");
+			gb_printf_err("LOC/s        - %.3f\n", cast(f64)lines/time);
+			gb_printf_err("us/LOC       - %.3f\n", 1.0e6*time/cast(f64)lines);
+			gb_printf_err("Tokens/s     - %.3f\n", cast(f64)tokens/time);
+			gb_printf_err("us/Token     - %.3f\n", 1.0e6*time/cast(f64)tokens);
+			gb_printf_err("bytes/s      - %.3f\n", cast(f64)total_file_size/time);
+			gb_printf_err("MiB/s        - %.3f\n", cast(f64)(total_file_size/time)/(1024*1024));
+			gb_printf_err("us/bytes     - %.3f\n", 1.0e6*time/cast(f64)total_file_size);
 
-			gb_printf("\n");
+			gb_printf_err("\n");
 		}
 		{
 			f64 time = total_parsing_time;
-			gb_printf("Parsing Only\n");
-			gb_printf("LOC/s        - %.3f\n", cast(f64)lines/time);
-			gb_printf("us/LOC       - %.3f\n", 1.0e6*time/cast(f64)lines);
-			gb_printf("Tokens/s     - %.3f\n", cast(f64)tokens/time);
-			gb_printf("us/Token     - %.3f\n", 1.0e6*time/cast(f64)tokens);
-			gb_printf("bytes/s      - %.3f\n", cast(f64)total_file_size/time);
-			gb_printf("MiB/s        - %.3f\n", cast(f64)(total_file_size/time)/(1024*1024));
-			gb_printf("us/bytes     - %.3f\n", 1.0e6*time/cast(f64)total_file_size);
+			gb_printf_err("Parsing Only\n");
+			gb_printf_err("LOC/s        - %.3f\n", cast(f64)lines/time);
+			gb_printf_err("us/LOC       - %.3f\n", 1.0e6*time/cast(f64)lines);
+			gb_printf_err("Tokens/s     - %.3f\n", cast(f64)tokens/time);
+			gb_printf_err("us/Token     - %.3f\n", 1.0e6*time/cast(f64)tokens);
+			gb_printf_err("bytes/s      - %.3f\n", cast(f64)total_file_size/time);
+			gb_printf_err("MiB/s        - %.3f\n", cast(f64)(total_file_size/time)/(1024*1024));
+			gb_printf_err("us/bytes     - %.3f\n", 1.0e6*time/cast(f64)total_file_size);
 
-			gb_printf("\n");
+			gb_printf_err("\n");
 		}
 		{
 			TimeStamp ts = {};
@@ -2030,16 +2059,16 @@ gb_internal void show_timings(Checker *c, Timings *t) {
 			GB_ASSERT(ts.label == "parse files");
 
 			f64 parse_time = time_stamp_as_s(ts, t->freq);
-			gb_printf("Parse pass\n");
-			gb_printf("LOC/s        - %.3f\n", cast(f64)lines/parse_time);
-			gb_printf("us/LOC       - %.3f\n", 1.0e6*parse_time/cast(f64)lines);
-			gb_printf("Tokens/s     - %.3f\n", cast(f64)tokens/parse_time);
-			gb_printf("us/Token     - %.3f\n", 1.0e6*parse_time/cast(f64)tokens);
-			gb_printf("bytes/s      - %.3f\n", cast(f64)total_file_size/parse_time);
-			gb_printf("MiB/s        - %.3f\n", cast(f64)(total_file_size/parse_time)/(1024*1024));
-			gb_printf("us/bytes     - %.3f\n", 1.0e6*parse_time/cast(f64)total_file_size);
+			gb_printf_err("Parse pass\n");
+			gb_printf_err("LOC/s        - %.3f\n", cast(f64)lines/parse_time);
+			gb_printf_err("us/LOC       - %.3f\n", 1.0e6*parse_time/cast(f64)lines);
+			gb_printf_err("Tokens/s     - %.3f\n", cast(f64)tokens/parse_time);
+			gb_printf_err("us/Token     - %.3f\n", 1.0e6*parse_time/cast(f64)tokens);
+			gb_printf_err("bytes/s      - %.3f\n", cast(f64)total_file_size/parse_time);
+			gb_printf_err("MiB/s        - %.3f\n", cast(f64)(total_file_size/parse_time)/(1024*1024));
+			gb_printf_err("us/bytes     - %.3f\n", 1.0e6*parse_time/cast(f64)total_file_size);
 
-			gb_printf("\n");
+			gb_printf_err("\n");
 		}
 		{
 			TimeStamp ts = {};
@@ -2060,27 +2089,27 @@ gb_internal void show_timings(Checker *c, Timings *t) {
 			ts.finish = ts_end.finish;
 
 			f64 parse_time = time_stamp_as_s(ts, t->freq);
-			gb_printf("Checker pass\n");
-			gb_printf("LOC/s        - %.3f\n", cast(f64)lines/parse_time);
-			gb_printf("us/LOC       - %.3f\n", 1.0e6*parse_time/cast(f64)lines);
-			gb_printf("Tokens/s     - %.3f\n", cast(f64)tokens/parse_time);
-			gb_printf("us/Token     - %.3f\n", 1.0e6*parse_time/cast(f64)tokens);
-			gb_printf("bytes/s      - %.3f\n", cast(f64)total_file_size/parse_time);
-			gb_printf("MiB/s        - %.3f\n", (cast(f64)total_file_size/parse_time)/(1024*1024));
-			gb_printf("us/bytes     - %.3f\n", 1.0e6*parse_time/cast(f64)total_file_size);
-			gb_printf("\n");
+			gb_printf_err("Checker pass\n");
+			gb_printf_err("LOC/s        - %.3f\n", cast(f64)lines/parse_time);
+			gb_printf_err("us/LOC       - %.3f\n", 1.0e6*parse_time/cast(f64)lines);
+			gb_printf_err("Tokens/s     - %.3f\n", cast(f64)tokens/parse_time);
+			gb_printf_err("us/Token     - %.3f\n", 1.0e6*parse_time/cast(f64)tokens);
+			gb_printf_err("bytes/s      - %.3f\n", cast(f64)total_file_size/parse_time);
+			gb_printf_err("MiB/s        - %.3f\n", (cast(f64)total_file_size/parse_time)/(1024*1024));
+			gb_printf_err("us/bytes     - %.3f\n", 1.0e6*parse_time/cast(f64)total_file_size);
+			gb_printf_err("\n");
 		}
 		{
 			f64 total_time = t->total_time_seconds;
-			gb_printf("Total pass\n");
-			gb_printf("LOC/s        - %.3f\n", cast(f64)lines/total_time);
-			gb_printf("us/LOC       - %.3f\n", 1.0e6*total_time/cast(f64)lines);
-			gb_printf("Tokens/s     - %.3f\n", cast(f64)tokens/total_time);
-			gb_printf("us/Token     - %.3f\n", 1.0e6*total_time/cast(f64)tokens);
-			gb_printf("bytes/s      - %.3f\n", cast(f64)total_file_size/total_time);
-			gb_printf("MiB/s        - %.3f\n", cast(f64)(total_file_size/total_time)/(1024*1024));
-			gb_printf("us/bytes     - %.3f\n", 1.0e6*total_time/cast(f64)total_file_size);
-			gb_printf("\n");
+			gb_printf_err("Total pass\n");
+			gb_printf_err("LOC/s        - %.3f\n", cast(f64)lines/total_time);
+			gb_printf_err("us/LOC       - %.3f\n", 1.0e6*total_time/cast(f64)lines);
+			gb_printf_err("Tokens/s     - %.3f\n", cast(f64)tokens/total_time);
+			gb_printf_err("us/Token     - %.3f\n", 1.0e6*total_time/cast(f64)tokens);
+			gb_printf_err("bytes/s      - %.3f\n", cast(f64)total_file_size/total_time);
+			gb_printf_err("MiB/s        - %.3f\n", cast(f64)(total_file_size/total_time)/(1024*1024));
+			gb_printf_err("us/bytes     - %.3f\n", 1.0e6*total_time/cast(f64)total_file_size);
+			gb_printf_err("\n");
 		}
 	}
 }
@@ -2386,12 +2415,6 @@ gb_internal int print_show_help(String const arg0, String command, String option
 		}
 	}
 
-	if (test_only) {
-		if (print_flag("-build-only")) {
-			print_usage_line(2, "Only builds the test executable; does not automatically run it afterwards.");
-		}
-	}
-
 	if (check) {
 		if (print_flag("-collection:<name>=<filepath>")) {
 			print_usage_line(2, "Defines a library collection used for imports.");
@@ -2658,8 +2681,14 @@ gb_internal int print_show_help(String const arg0, String command, String option
 		}
 
 
-		if (print_flag("-obfuscate-source-code-locations")) {
-			print_usage_line(2, "Obfuscate the file and procedure strings, and line and column numbers, stored with a 'runtime.Source_Code_Location' value.");
+		if (print_flag("-source-code-locations:<string>")) {
+			print_usage_line(2, "Processes the file and procedure strings, and line and column numbers, stored with a 'runtime.Source_Code_Location' value.");
+			print_usage_line(2, "Available options:");
+				print_usage_line(3, "-source-code-locations:normal");
+				print_usage_line(3, "-source-code-locations:obfuscated");
+				print_usage_line(3, "-source-code-locations:filename");
+				print_usage_line(3, "-source-code-locations:none");
+			print_usage_line(2, "The default is -source-code-locations:normal.");
 		}
 
 
@@ -2671,7 +2700,7 @@ gb_internal int print_show_help(String const arg0, String command, String option
 
 	if (doc) {
 		if (print_flag("-out:<filepath>")) {
-			print_usage_line(2, "Sets the base name of the resultig .odin-doc file.");
+			print_usage_line(2, "Sets the base name of the resulting .odin-doc file.");
 			print_usage_line(2, "The extension can be optionally included; the resulting file will always have an extension of '.odin-doc'.");
 			print_usage_line(2, "Example: -out:foo");
 		}
@@ -2722,7 +2751,6 @@ gb_internal int print_show_help(String const arg0, String command, String option
 				print_usage_line(3, "-sanitize:address");
 				print_usage_line(3, "-sanitize:memory");
 				print_usage_line(3, "-sanitize:thread");
-			print_usage_line(2, "NOTE: This flag can be used multiple times.");
 		}
 	}
 

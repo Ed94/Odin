@@ -168,6 +168,7 @@ foreign kernel32 {
 	ResumeThread :: proc(thread: HANDLE) -> DWORD ---
 	GetThreadPriority :: proc(thread: HANDLE) -> c_int ---
 	SetThreadPriority :: proc(thread: HANDLE, priority: c_int) -> BOOL ---
+	GetThreadDescription :: proc(hThread: HANDLE, ppszThreadDescription: ^PCWSTR) -> HRESULT ---
 	SetThreadDescription :: proc(hThread: HANDLE, lpThreadDescription: PCWSTR) -> HRESULT ---
 	GetExitCodeThread :: proc(thread: HANDLE, exit_code: ^DWORD) -> BOOL ---
 	TerminateThread :: proc(thread: HANDLE, exit_code: DWORD) -> BOOL ---
@@ -371,6 +372,12 @@ foreign kernel32 {
 		bManualReset: BOOL,
 		bInitialState: BOOL,
 		lpName: LPCWSTR,
+	) -> HANDLE ---
+	CreateEventExW :: proc(
+		lpEventAttributes: LPSECURITY_ATTRIBUTES,
+		lpName: LPCWSTR,
+		dwFlags: DWORD,
+		dwDesiredAccess: DWORD,
 	) -> HANDLE ---
 	ResetEvent :: proc(hEvent: HANDLE) -> BOOL ---
 	SetEvent :: proc(hEvent: HANDLE) -> BOOL ---

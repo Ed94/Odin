@@ -51,7 +51,6 @@ Text :: struct {
 }
 
 FontStyle :: enum u32 {
-	NORMAL,
 	BOLD,
 	ITALIC,
 	UNDERLINE,
@@ -151,42 +150,42 @@ foreign lib {
 	GetFontDPI     :: proc(font: ^Font, hdpi: ^c.int, vdpi: ^c.int) -> bool ---
 
 	SetFontStyle :: proc(font: ^Font, style: FontStyleFlags) ---
-	GetFontStyle :: proc(#by_ptr font: Font) -> FontStyleFlags ---
+	GetFontStyle :: proc(font: ^Font) -> FontStyleFlags ---
 
 	SetFontOutline :: proc(font: ^Font, outline: c.int) -> bool ---
-	GetFontOutline :: proc(#by_ptr font: Font) -> c.int ---
+	GetFontOutline :: proc(font: ^Font) -> c.int ---
 
 	SetFontHinting :: proc(font: ^Font, hinting: Hinting) ---
-	GetFontHinting :: proc(#by_ptr font: Font) -> Hinting ---
+	GetFontHinting :: proc(font: ^Font) -> Hinting ---
 
 	GetNumFontFaces :: proc(font: ^Font) -> c.int ---
 
 	SetFontSDF :: proc(font: ^Font, enabled: bool) -> bool ---
-	GetFontSDF :: proc(#by_ptr font: Font) -> bool ---
+	GetFontSDF :: proc(font: ^Font) -> bool ---
 
-	GetFontWeight :: proc(#by_ptr font: Font) -> c.int ---
+	GetFontWeight :: proc(font: ^Font) -> c.int ---
 
 	SetFontWrapAlignment :: proc(font: ^Font, align: HorizontalAlignment) ---
-	GetFontWrapAlignment :: proc(#by_ptr font: Font) -> HorizontalAlignment ---
+	GetFontWrapAlignment :: proc(font: ^Font) -> HorizontalAlignment ---
 
-	GetFontHeight :: proc(#by_ptr font: Font) -> c.int ---
-	GetFontAscent :: proc(#by_ptr font: Font) -> c.int ---
-	GetFontDescent :: proc(#by_ptr font: Font) -> c.int ---
+	GetFontHeight :: proc(font: ^Font) -> c.int ---
+	GetFontAscent :: proc(font: ^Font) -> c.int ---
+	GetFontDescent :: proc(font: ^Font) -> c.int ---
 
 	SetFontLineSkip :: proc(font: ^Font, lineskip: c.int) ---
-	GetFontLineSkip :: proc(#by_ptr font: Font) -> c.int ---
+	GetFontLineSkip :: proc(font: ^Font) -> c.int ---
 
 	SetFontKerning :: proc(font: ^Font, enabled: bool) ---
-	GetFontKerning :: proc(#by_ptr font: Font) -> bool ---
+	GetFontKerning :: proc(font: ^Font) -> bool ---
 
-	FontIsFixedWidth :: proc(#by_ptr font: Font) -> bool ---
-	FontIsScalable :: proc(#by_ptr font: Font) -> bool ---
+	FontIsFixedWidth :: proc(font: ^Font) -> bool ---
+	FontIsScalable :: proc(font: ^Font) -> bool ---
 
-	GetFontFamilyName :: proc(#by_ptr font: Font) -> cstring ---
-	GetFontStyleName :: proc(#by_ptr font: Font) -> cstring ---
+	GetFontFamilyName :: proc(font: ^Font) -> cstring ---
+	GetFontStyleName :: proc(font: ^Font) -> cstring ---
 
 	SetFontDirection :: proc(font: ^Font, direction: Direction) -> bool ---
-	GetFontDirection :: proc(#by_ptr font: Font) -> Direction ---
+	GetFontDirection :: proc(font: ^Font) -> Direction ---
 
 	StringToTag :: proc(string: cstring) -> u32 ---
 	TagToString :: proc(tag: u32, string: [^]c.char, size: c.size_t) ---
@@ -214,7 +213,7 @@ foreign lib {
 	RenderText_Shaded_Wrapped  :: proc(font: ^Font, text: cstring, length: c.size_t, fg, bg: SDL.Color, wrap_width: c.int) -> ^SDL.Surface ---
 	RenderGlyph_Shaded         :: proc(font: ^Font, ch: u32, fg, bg: SDL.Color) -> ^SDL.Surface ---
 	RenderText_Blended         :: proc(font: ^Font, text: cstring, length: c.size_t, fg: SDL.Color) -> ^SDL.Surface ---
-	RnederText_Blended_Wrapped :: proc(font: ^Font, text: cstring, length: c.size_t, fg: SDL.Color, wrap_width: c.int) -> ^SDL.Surface ---
+	RenderText_Blended_Wrapped :: proc(font: ^Font, text: cstring, length: c.size_t, fg: SDL.Color, wrap_width: c.int) -> ^SDL.Surface ---
 	RenderGlyph_Blended        :: proc(font: ^Font, ch: u32, fg: SDL.Color) -> ^SDL.Surface ---
 	RenderText_LCD             :: proc(font: ^Font, text: cstring, length: c.size_t, fg, bg: SDL.Color) -> ^SDL.Surface ---
 	RenderText_LCD_Wrapped     :: proc(font: ^Font, text: cstring, length: c.size_t, fg, bg: SDL.Color, wrap_width: c.int) -> ^SDL.Surface ---

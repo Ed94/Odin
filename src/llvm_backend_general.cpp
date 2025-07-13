@@ -546,8 +546,11 @@ gb_internal lbValue lb_addr_get_ptr(lbProcedure *p, lbAddr const &addr) {
 		break;
 
 	case lbAddr_Swizzle:
+		GB_PANIC("lbAddr_Swizzle should be handled elsewhere");
+		break;
+
 	case lbAddr_SwizzleLarge:
-		// TOOD(bill): is this good enough logic?
+		GB_PANIC("lbAddr_SwizzleLarge should be handled elsewhere");
 		break;
 	}
 
@@ -565,10 +568,22 @@ gb_internal void lb_set_file_line_col(lbProcedure *p, Array<lbValue> arr, TokenP
 	i32 line    = pos.line;
 	i32 col     = pos.column;
 
-	if (build_context.obfuscate_source_code_locations) {
+	switch (build_context.source_code_location_info) {
+	case SourceCodeLocationInfo_Normal:
+		break;
+	case SourceCodeLocationInfo_Obfuscated:
 		file = obfuscate_string(file, "F");
 		line = obfuscate_i32(line);
 		col  = obfuscate_i32(col);
+		break;
+	case SourceCodeLocationInfo_Filename:
+		file = last_path_element(file);
+		break;
+	case SourceCodeLocationInfo_None:
+		file = str_lit("");
+		line = 0;
+		col  = 0;
+		break;
 	}
 
 	arr[0] = lb_find_or_add_entity_string(p->module, file, false);
@@ -922,7 +937,7 @@ gb_internal void lb_addr_store(lbProcedure *p, lbAddr addr, lbValue value) {
 		GB_ASSERT(value.value != nullptr);
 		value = lb_emit_conv(p, value, lb_addr_type(addr));
 
-		lbValue dst = lb_addr_get_ptr(p, addr);
+		lbValue dst = addr.addr;
 		lbValue src = lb_address_from_load_or_generate_local(p, value);
 		{
 			lbValue src_ptrs[4] = {};
@@ -948,7 +963,7 @@ gb_internal void lb_addr_store(lbProcedure *p, lbAddr addr, lbValue value) {
 		GB_ASSERT(value.value != nullptr);
 		value = lb_emit_conv(p, value, lb_addr_type(addr));
 
-		lbValue dst = lb_addr_get_ptr(p, addr);
+		lbValue dst = addr.addr;
 		lbValue src = lb_address_from_load_or_generate_local(p, value);
 		for_array(i, addr.swizzle_large.indices) {
 			lbValue src_ptr = lb_emit_array_epi(p, src, i);
@@ -2203,7 +2218,7 @@ gb_internal LLVMTypeRef lb_type_internal(lbModule *m, Type *type) {
 				field_count = 3;
 			}
 			LLVMTypeRef *fields = gb_alloc_array(permanent_allocator(), LLVMTypeRef, field_count);
-			fields[0] = LLVMPointerType(lb_type(m, type->Pointer.elem), 0);
+			fields[0] = LLVMPointerType(lb_type(m, type->SoaPointer.elem), 0);
 			if (bigger_int) {
 				fields[1] = lb_type_padding_filler(m, build_context.ptr_size, build_context.ptr_size);
 				fields[2] = LLVMIntTypeInContext(ctx, 8*cast(unsigned)build_context.int_size);

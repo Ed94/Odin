@@ -41,6 +41,7 @@ gb_global BuiltinTypeIsProc *builtin_type_is_procs[BuiltinProc__type_simple_bool
 	is_type_enum,
 	is_type_proc,
 	is_type_bit_set,
+	is_type_bit_field,
 	is_type_simd_vector,
 	is_type_matrix,
 
@@ -147,6 +148,11 @@ gb_internal bool does_require_msgSend_stret(Type *return_type) {
 	if (return_type == nullptr) {
 		return false;
 	}
+
+	if (build_context.metrics.os != TargetOs_darwin) {
+		return false;
+	}
+
 	if (build_context.metrics.arch == TargetArch_i386 || build_context.metrics.arch == TargetArch_amd64) {
 		i64 struct_limit = type_size_of(t_uintptr) << 1;
 		return type_size_of(return_type) > struct_limit;
@@ -5593,7 +5599,7 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 			}
 
 			if (sz >= 64) {
-				if (is_type_unsigned(x.type)) {
+				if (is_type_unsigned(x.type) || is_type_unsigned(y.type)) {
 					add_package_dependency(c, "runtime", "umodti3", true);
 					add_package_dependency(c, "runtime", "udivti3", true);
 				} else {
@@ -6082,6 +6088,7 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 	case BuiltinProc_type_is_enum:
 	case BuiltinProc_type_is_proc:
 	case BuiltinProc_type_is_bit_set:
+	case BuiltinProc_type_is_bit_field:
 	case BuiltinProc_type_is_simd_vector:
 	case BuiltinProc_type_is_matrix:
 	case BuiltinProc_type_is_specialized_polymorphic_record:
