@@ -600,13 +600,15 @@ gb_internal void lb_begin_procedure_body(lbProcedure *p) {
 
 			unsigned param_index = 0;
 			for_array(i, params->variables) {
-				Entity *e = params->variables[i];
+				Entity *e = params->variables[i];		
 				if (e->kind != Entity_Variable) {
 					continue;
 				}
 
 				lbArgType *arg_type = &ft->args[param_index];
 				defer (param_index += 1);
+				
+				lbValue ptr = {};
 
 				if (arg_type->kind == lbArg_Ignore) {
 					// Even though it is an ignored argument, it might still be referenced in the
@@ -625,10 +627,11 @@ gb_internal void lb_begin_procedure_body(lbProcedure *p) {
 
 						map_set(&p->direct_parameters, e, param);
 
-						lbValue ptr = lb_address_from_load_or_generate_local(p, param);
+						ptr = lb_address_from_load_or_generate_local(p, param);
 						GB_ASSERT(LLVMIsAAllocaInst(ptr.value));
 						lb_add_entity(p->module, e, ptr);
 						lb_add_debug_param_variable(p, ptr.value, e->type, e->token, param_index+1, p->curr_block);
+
 					}
 				} else if (arg_type->kind == lbArg_Indirect) {
 					if (e->token.string.len != 0 && !is_blank_ident(e->token.string)) {
@@ -642,7 +645,7 @@ gb_internal void lb_begin_procedure_body(lbProcedure *p) {
 							}
 						}
 
-						lbValue ptr = {};
+						ptr = {};
 						ptr.value = LLVMGetParam(p->value, param_offset+param_index);
 						ptr.type = alloc_type_pointer(e->type);
 
@@ -654,6 +657,42 @@ gb_internal void lb_begin_procedure_body(lbProcedure *p) {
 
 						lb_add_entity(p->module, e, ptr);
 						lb_add_debug_param_variable(p, ptr.value, e->type, e->token, param_index+1, p->decl_block);
+					}
+				}
+				
+				if (p->debug_info && (e->flags & EntityFlag_Using)) {
+					// NOTE(Ed) - Sectr Fork: Added this in for debubability.
+					// Will add a local ptr variable referencing for every exposed field into the stack frame
+							
+					Type* struct_type = base_type(type_deref(e->type));
+					if (struct_type == nullptr || struct_type->kind != Type_Struct) {
+						continue;
+					}
+							
+					String struct_name = e->token.string;
+
+					// Get base struct pointer
+					//lbValue struct_ptr = lb_build_addr_ptr(p, ast_var);
+
+					wait_signal_until_available(& struct_type->Struct.fields_wait_signal);
+					for_array(id, struct_type->Struct.fields)
+					{
+						Entity* field = struct_type->Struct.fields [ id ];
+						if (field->kind != Entity_Variable || ! (field->flags & EntityFlag_Field)) {
+							continue;
+						}
+						Type* type_ptr_field_type = alloc_type_pointer(field->type);
+
+						Token  debug_token  = field->token;
+						char*  debug_name   = debug_lb_make_using_struct_ref_identifier(temporary_allocator(), struct_name, field->token.string);
+						debug_token.string = make_string((u8*)debug_name, gb_strlen(debug_name));
+
+						Entity*   debug_field = alloc_entity_variable(field->scope, debug_token, field->type);
+						Selection sel_field   = lookup_field_from_index(struct_type, field->Variable.field_index);
+
+						lbAddr  field_debug_ptr = lb_add_local(p, type_ptr_field_type, debug_field, false);
+						lbValue field_ptr       = lb_emit_deep_field_gep(p, ptr, sel_field);
+						lb_addr_store(p, field_debug_ptr, field_ptr);
 					}
 				}
 			}

@@ -3199,3 +3199,17 @@ gb_internal void lb_set_linkage_from_entity_flags(lbModule *m, LLVMValueRef valu
 		LLVMSetLinkage(value, LLVMLinkOnceAnyLinkage);
 	}
 }
+
+// NOTE(Ed) - Sectr Fork: Added for namespaced names on using statements in debug
+// Format: struct_name::field_name
+// I tired todo struct_name.field_name it didn't work (nor using struct_name.field_name)
+char* debug_lb_make_using_struct_ref_identifier(gbAllocator allocator, String struct_name, String field_name) {
+    isize name_len   = 2 + struct_name.len + 1 + field_name.len + 1;
+    char* debug_name = gb_alloc_array(allocator, char, name_len);
+    gb_snprintf(debug_name, name_len, "%.*s::%.*s"
+		, LIT(struct_name)
+		, LIT(field_name)
+	);
+    return debug_name;
+}
+
