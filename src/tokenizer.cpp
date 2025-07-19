@@ -183,6 +183,7 @@ gb_internal void init_keyword_hash_table(void) {
 		TokenKind kind;
 	} const legacy_keywords[] = {
 		{str_lit("notin"), Token_not_in},
+		{str_lit("plex"), Token_not_in},
 	};
 
 	for (i32 i = 0; i < gb_count_of(legacy_keywords); i++) {
