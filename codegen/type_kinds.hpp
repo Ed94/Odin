@@ -73,12 +73,12 @@ struct Enum {
 };
 
 struct Tuple {
-	Slice<Entity *>  variables; /* Entity_Variable */
-	i64             *offsets;
-	BlockingMutex    mutex; /* for settings offsets */
-	bool             are_offsets_being_processed;
-	bool             are_offsets_set;
-	bool             is_packed;
+	Slice<Entity *>   variables; /* Entity_Variable */
+	i64              *offsets;
+	BlockingMutex     mutex; /* for settings offsets */
+	std::atomic<bool> are_offsets_being_processed;
+	bool              are_offsets_set;
+	bool              is_packed;
 };
 
 typedef TypeProc Proc;
