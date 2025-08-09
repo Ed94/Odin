@@ -298,3 +298,8 @@ build.sh
 tests/issues/build/*
 misc/featuregen/featuregen
 codegen/build/gen_src.map
+
+# Clangd stuff
+.cache/
+.clangd
+compile_commands.json

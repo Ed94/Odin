@@ -32,6 +32,7 @@ trap       :: proc() -> ! ---
 alloca             :: proc(size, align: int) -> [^]u8 ---
 cpu_relax          :: proc() ---
 read_cycle_counter :: proc() -> i64 ---
+read_cycle_counter_frequency :: proc() -> i64 ---
 
 count_ones           :: proc(x: $T) -> T where type_is_integer(T) || type_is_simd_vector(T) ---
 count_zeros          :: proc(x: $T) -> T where type_is_integer(T) || type_is_simd_vector(T) ---
@@ -213,6 +214,10 @@ type_is_subtype_of :: proc($T, $U: typeid) -> bool ---
 
 type_field_index_of :: proc($T: typeid, $name: string) -> uintptr ---
 
+// "Contiguous" means that the set of enum constants, when sorted, have a difference of either 0 or 1 between consecutive values.
+// This is the exact opposite of "sparse".
+type_enum_is_contiguous :: proc($T: typeid) -> bool where type_is_enum(T) ---
+
 type_equal_proc  :: proc($T: typeid) -> (equal:  proc "contextless" (rawptr, rawptr) -> bool)                 where type_is_comparable(T) ---
 type_hasher_proc :: proc($T: typeid) -> (hasher: proc "contextless" (data: rawptr, seed: uintptr) -> uintptr) where type_is_comparable(T) ---
 
@@ -310,6 +315,7 @@ simd_indices :: proc($T: typeid/#simd[$N]$E) -> T where type_is_numeric(T) ---
 
 simd_shuffle :: proc(a, b: #simd[N]T, indices: ..int) -> #simd[len(indices)]T ---
 simd_select  :: proc(cond: #simd[N]boolean_or_integer, true, false: #simd[N]T) -> #simd[N]T ---
+simd_runtime_swizzle :: proc(table: #simd[N]T, indices: #simd[N]T) -> #simd[N]T where type_is_integer(T) ---
 
 // Lane-wise operations
 simd_ceil    :: proc(a: #simd[N]any_float) -> #simd[N]any_float ---
@@ -355,6 +361,7 @@ wasm_memory_atomic_notify32 :: proc(ptr: ^u32, waiters: u32) -> (waiters_woken_u
 // x86 Targets (i386, amd64)
 x86_cpuid  :: proc(ax, cx: u32) -> (eax, ebx, ecx, edx: u32) ---
 x86_xgetbv :: proc(cx: u32) -> (eax, edx: u32) ---
+
 
 
 // Darwin targets only

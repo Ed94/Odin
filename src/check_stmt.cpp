@@ -430,8 +430,6 @@ gb_internal Type *check_assignment_variable(CheckerContext *ctx, Operand *lhs, O
 
 	Ast *node = unparen_expr(lhs->expr);
 
-	check_no_copy_assignment(*rhs, context_name);
-
 	// NOTE(bill): Ignore assignments to '_'
 	if (is_blank_ident(node)) {
 		check_assignment(ctx, rhs, nullptr, str_lit("assignment to '_' identifier"));
@@ -2777,6 +2775,10 @@ gb_internal void check_stmt_internal(CheckerContext *ctx, Ast *node, u32 flags) 
 
 			Ast *stmt = ds->stmt;
 			Ast *original_stmt = stmt;
+
+			if (stmt->kind == Ast_BlockStmt && stmt->BlockStmt.stmts.count == 0) {
+				break; // empty defer statement
+			}
 
 			bool is_singular = true;
 			while (is_singular && stmt->kind == Ast_BlockStmt) {
