@@ -602,6 +602,13 @@ gb_internal void check_type_decl(CheckerContext *ctx, Entity *e, Ast *init_expr,
 		} else if (ac.objc_is_implementation) {
 			error(e->token, "@(objc_implement) may only be applied when the @(objc_class) attribute is also applied");
 		}
+
+		if (ac.raddbg_type_view) {
+			RaddbgTypeView type_view = {};
+			type_view.type = e->type;
+			type_view.view = ac.raddbg_type_view_string;
+			mpsc_enqueue(&ctx->info->raddbg_type_views_queue, type_view);
+		}
 	}
 
 
@@ -813,6 +820,12 @@ gb_internal bool signature_parameter_similar_enough(Type *x, Type *y) {
 		return true;
 	}
 	if (sig_compare(is_type_cstring, is_type_u8_multi_ptr, x, y)) {
+		return true;
+	}
+	if (sig_compare(is_type_cstring16, is_type_u16_ptr, x, y)) {
+		return true;
+	}
+	if (sig_compare(is_type_cstring16, is_type_u16_multi_ptr, x, y)) {
 		return true;
 	}
 
@@ -1845,6 +1858,17 @@ gb_internal void check_entity_decl(CheckerContext *ctx, Entity *e, DeclInfo *d, 
 		c.scope = d->scope;
 		c.decl  = d;
 		c.type_level = 0;
+		c.curr_proc_calling_convention = ProcCC_Contextless;
+
+		auto prev_flags = c.scope->flags;
+		defer (c.scope->flags = prev_flags);
+
+		if (check_feature_flags(ctx, d->decl_node) & OptInFeatureFlag_GlobalContext) {
+			c.scope->flags |= ScopeFlag_ContextDefined;
+		} else {
+			c.scope->flags &= ~ScopeFlag_ContextDefined;
+		}
+
 
 		e->parent_proc_decl = c.curr_proc_decl;
 		e->state = EntityState_InProgress;

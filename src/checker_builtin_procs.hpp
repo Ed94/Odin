@@ -250,6 +250,7 @@ BuiltinProc__type_simple_boolean_begin,
 	BuiltinProc_type_is_complex,
 	BuiltinProc_type_is_quaternion,
 	BuiltinProc_type_is_string,
+	BuiltinProc_type_is_string16,
 	BuiltinProc_type_is_typeid,
 	BuiltinProc_type_is_any,
 
@@ -338,6 +339,8 @@ BuiltinProc__type_simple_boolean_end,
 
 	BuiltinProc_type_has_shared_fields,
 
+	BuiltinProc_type_canonical_name,
+
 BuiltinProc__type_end,
 
 	BuiltinProc_procedure_of,
@@ -350,6 +353,7 @@ BuiltinProc__type_end,
 	BuiltinProc_objc_register_selector,
 	BuiltinProc_objc_register_class,
 	BuiltinProc_objc_ivar_get,
+	BuiltinProc_objc_block,
 
 	BuiltinProc_constant_utf16_cstring,
 
@@ -608,6 +612,7 @@ gb_global BuiltinProc builtin_procs[BuiltinProc_COUNT] = {
 	{STR_LIT("type_is_complex"),           1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 	{STR_LIT("type_is_quaternion"),        1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 	{STR_LIT("type_is_string"),            1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
+	{STR_LIT("type_is_string16"),          1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 	{STR_LIT("type_is_typeid"),            1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 	{STR_LIT("type_is_any"),               1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 
@@ -695,6 +700,7 @@ gb_global BuiltinProc builtin_procs[BuiltinProc_COUNT] = {
 	{STR_LIT("type_map_cell_info"), 1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 
 	{STR_LIT("type_has_shared_fields"), 2, false, Expr_Expr, BuiltinProcPkg_intrinsics},
+	{STR_LIT("type_canonical_name"), 1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 
 	{STR_LIT(""), 0, false, Expr_Stmt, BuiltinProcPkg_intrinsics},
 
@@ -709,6 +715,7 @@ gb_global BuiltinProc builtin_procs[BuiltinProc_COUNT] = {
 	{STR_LIT("objc_register_selector"), 1, false, Expr_Expr, BuiltinProcPkg_intrinsics, false, true},
 	{STR_LIT("objc_register_class"),    1, false, Expr_Expr, BuiltinProcPkg_intrinsics, false, true},
 	{STR_LIT("objc_ivar_get"),          1, false, Expr_Expr, BuiltinProcPkg_intrinsics, false, true},
+	{STR_LIT("objc_block"),             1, true,  Expr_Expr, BuiltinProcPkg_intrinsics, false, true},
 
 	{STR_LIT("constant_utf16_cstring"), 1, false, Expr_Expr, BuiltinProcPkg_intrinsics},
 
