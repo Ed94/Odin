@@ -5,11 +5,15 @@ These are not to be used directly. They are parsed by gen_src.cpp
 
 typedef BasicType Basic;
 
-struct Named {
-	String  name;
-	Type   *base;
-	Entity *type_name; /* Entity_TypeName */
-};
+typedef TypeNamed Named;
+// struct Named {
+// 	String  name;
+// 	Type   *base;
+// 	Entity *type_name; /* Entity_TypeName */
+
+// 	BlockingMutex gen_types_data_mutex;
+// 	GenTypesData *gen_types_data;
+// };
 
 struct Generic {
 	i64     id;

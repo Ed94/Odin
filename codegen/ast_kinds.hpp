@@ -14,6 +14,7 @@ char const* desc_Ident = "identifier";
 struct Ident {
 	Token   token;
 	Entity *entity;
+	u32     hash;
 };
 
 char const* desc_Implicit = "implicit";
