@@ -198,6 +198,10 @@ _alloc_command_line_arguments :: proc "contextless" () -> []string {
 	context = runtime.default_context()
 	arg_count: i32
 	arg_list_ptr := win32.CommandLineToArgvW(win32.GetCommandLineW(), &arg_count)
+	
+	// NOTE(Ed): Prevents panic, when none passed, there is only the win32 processs executable path
+	if context.allocator.procedure == runtime.panic_allocator_proc && arg_count == 1 do return {} 
+
 	arg_list := make([]string, int(arg_count))
 	for _, i in arg_list {
 		wc_str := (^win32.wstring)(uintptr(arg_list_ptr) + size_of(win32.wstring)*uintptr(i))^
