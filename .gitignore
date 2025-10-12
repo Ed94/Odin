@@ -303,3 +303,9 @@ codegen/build/gen_src.map
 .cache/
 .clangd
 compile_commands.json
+
+# Dev cmake helpers
+build/
+cmake-build*/
+CMakeLists.txt
+sandbox/
