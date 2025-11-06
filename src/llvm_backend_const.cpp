@@ -689,6 +689,22 @@ gb_internal lbValue lb_const_value(lbModule *m, Type *type, ExactValue value, lb
 		if (bt->Union.variants.count == 0) {
 			return lb_const_nil(m, original_type);
 		} else if (bt->Union.variants.count == 1) {
+			if (value.kind == ExactValue_Compound) {
+				ast_node(cl, CompoundLit, value.value_compound);
+				if (cl->elems.count == 0) {
+					if (cl->type == nullptr) {
+						return lb_const_nil(m, original_type);
+					}
+					if (are_types_identical(type_of_expr(cl->type), original_type)) {
+						return lb_const_nil(m, original_type);
+					}
+				}
+			}
+
+			if (value_type == t_untyped_nil) {
+				return lb_const_nil(m, original_type);
+			}
+
 			Type *t = bt->Union.variants[0];
 			lbValue cv =  lb_const_value(m, t, value, cc);
 			GB_ASSERT(LLVMIsConstant(cv.value));
@@ -729,6 +745,8 @@ gb_internal lbValue lb_const_value(lbModule *m, Type *type, ExactValue value, lb
 				} else if (value.kind == ExactValue_Invalid) {
 					return lb_const_nil(m, original_type);
 				}
+			} else if (value_type == t_untyped_nil) {
+				return lb_const_nil(m, original_type);
 			}
 
 			GB_ASSERT_MSG(value_type != nullptr, "%s :: %s", type_to_string(original_type), exact_value_to_string(value));

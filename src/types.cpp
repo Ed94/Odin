@@ -2,6 +2,9 @@ struct Ast;
 struct Scope;
 struct Entity;
 
+// NOTE(Jeroen): Minimum alignment for #load(file, <type>) slices
+#define MINIMUM_SLICE_ALIGNMENT 16
+
 enum BasicKind {
 	Basic_Invalid,
 
@@ -1293,6 +1296,15 @@ gb_internal bool is_type_rune(Type *t) {
 	}
 	return false;
 }
+gb_internal bool is_type_integer_or_float(Type *t) {
+	t = base_type(t);
+	if (t == nullptr) { return false; }
+	if (t->kind == Type_Basic) {
+		return (t->Basic.flags & (BasicFlag_Integer|BasicFlag_Float)) != 0;
+	}
+	return false;
+}
+
 gb_internal bool is_type_numeric(Type *t) {
 	t = base_type(t);
 	if (t == nullptr) { return false; }
