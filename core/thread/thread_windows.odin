@@ -83,6 +83,65 @@ _create :: proc(procedure: Thread_Proc, priority: Thread_Priority) -> ^Thread {
 	return thread
 }
 
+// NOTE(Ed) - Sectr Fork: Support thread naming
+_create_ex :: proc(procedure: Thread_Proc, priority: Thread_Priority, name: string) -> ^Thread {
+	win32_thread_id: win32.DWORD
+
+	__windows_thread_entry_proc :: proc "system" (t_: rawptr) -> win32.DWORD {
+		t := (^Thread)(t_)
+
+		for (.Started not_in sync.atomic_load(&t.flags)) {
+			sync.wait(&t.start_ok)
+		}
+
+		{
+			init_context := t.init_context
+
+			// NOTE(tetra, 2023-05-31): Must do this AFTER thread.start() is called, so that the user can set the init_context, etc!
+			// Here on Windows, the thread is created in a suspended state, and so we can select the context anywhere before the call
+			// to t.procedure().
+			context = _select_context_for_thread(init_context)
+			defer {
+				_maybe_destroy_default_temp_allocator(init_context)
+				runtime.run_thread_local_cleaners()
+			}
+
+			t.procedure(t)
+		}
+
+		intrinsics.atomic_or(&t.flags, {.Done})
+
+		if .Self_Cleanup in sync.atomic_load(&t.flags) {
+			win32.CloseHandle(t.win32_thread)
+			t.win32_thread = win32.INVALID_HANDLE
+			// NOTE(ftphikari): It doesn't matter which context 'free' received, right?
+			context = {}
+			free(t, t.creation_allocator)
+		}
+		return 0
+	}
+	thread := new(Thread); if thread == nil { return nil }
+	thread.creation_allocator = context.allocator
+
+	win32_thread := win32.CreateThread(nil, 0, __windows_thread_entry_proc, thread, win32.CREATE_SUSPENDED, &win32_thread_id)
+	if win32_thread == nil {
+		free(thread, thread.creation_allocator); return nil
+	}
+	thread.procedure       = procedure
+	thread.win32_thread    = win32_thread
+	thread.win32_thread_id = win32_thread_id
+	thread.id              = int(win32_thread_id)
+	ok        := win32.SetThreadPriority(win32_thread, _thread_priority_map[priority]); assert(ok == true)
+	wstr_name := win32.utf8_to_wstring_alloc(name, context.temp_allocator); 
+	win32.SetThreadDescription(win32_thread, wstr_name)
+	return thread
+}
+// NOTE(Ed) - Sectr Fork: Support thread naming
+_set_name :: proc(thread: ^Thread, name: string) {
+	wstr_name := win32.utf8_to_wstring_alloc(name, context.temp_allocator); 
+	win32.SetThreadDescription(thread.win32_thread, wstr_name)
+}
+
 _start :: proc(t: ^Thread) {
 	sync.guard(&t.mutex)
 	t.flags += {.Started}

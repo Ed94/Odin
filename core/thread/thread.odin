@@ -107,6 +107,14 @@ create :: proc(procedure: Thread_Proc, priority := Thread_Priority.Normal) -> ^T
 	return _create(procedure, priority)
 }
 
+// NOTE(Ed) - Sectr Fork: Support thread naming
+create_ex :: proc(procedure: Thread_Proc, priority := Thread_Priority.Normal, name: string) -> ^Thread {
+	return _create_ex(procedure, priority, name)
+}
+set_name :: proc(thread: ^Thread, name: string) {
+	_set_name(thread, name)
+}
+
 /*
 Wait for the thread to finish and free all data associated with it.
 */
